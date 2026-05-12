@@ -1,0 +1,44 @@
+[defaults]
+code_mode = "worktree"
+docs_mode = "none"
+fallback_mode = "worktree"
+default_timeout_sec = 1200
+
+[timeouts]
+none = 600
+worktree = 1200
+container = 1800
+
+[repo_modes]
+tv7-axum-engine = "container"
+
+[classifiers]
+docs_keywords = [
+  "docs",
+  "documentation",
+  "readme",
+  "roadmap",
+  "runbook",
+  "policy",
+  "guide",
+  "changelog",
+  "comment",
+  "typo",
+]
+code_keywords = [
+  "api",
+  "endpoint",
+  "schema",
+  "model",
+  "service",
+  "worker",
+  "engine",
+  "backend",
+  "frontend",
+  "component",
+  "test",
+  "refactor",
+  "fix",
+  "feature",
+  "migration",
+]

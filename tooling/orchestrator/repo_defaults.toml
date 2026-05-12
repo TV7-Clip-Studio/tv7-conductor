@@ -1,0 +1,29 @@
+[defaults]
+validation_commands = []
+extra_labels = []
+owner_hints = []
+
+[repos.tv7-core]
+validation_commands = ["make conductor-status", "make conductor-events"]
+extra_labels = ["area:core"]
+owner_hints = ["Architect Agent"]
+
+[repos.tv7-fastapi-backend]
+validation_commands = ["make check", "pytest"]
+extra_labels = ["area:backend"]
+owner_hints = ["Backend Agent"]
+
+[repos.tv7-flutter-studio]
+validation_commands = ["make check", "flutter test"]
+extra_labels = ["area:studio"]
+owner_hints = ["Studio Agent"]
+
+[repos.tv7-astro-site]
+validation_commands = ["npm run lint", "npm run format"]
+extra_labels = ["area:site"]
+owner_hints = ["Site Agent"]
+
+[repos.tv7-axum-engine]
+validation_commands = ["cargo check", "cargo clippy"]
+extra_labels = ["area:engine"]
+owner_hints = ["Engine Agent"]

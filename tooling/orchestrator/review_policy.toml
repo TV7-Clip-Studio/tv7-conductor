@@ -1,0 +1,10 @@
+[defaults]
+max_loops = 2
+include_recommendations = true
+
+[repo_max_loops]
+tv7-axum-engine = 3
+
+[class_max_loops]
+docs = 1
+code = 2

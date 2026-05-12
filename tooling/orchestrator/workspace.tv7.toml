@@ -1,0 +1,57 @@
+[workspace]
+root = "../../.."
+state_dir = "../../docs/.conductor"
+
+[repos.tv7-core]
+path = "tv7-core"
+roadmap_sources = ["docs/roadmaps/core/project-conductor-roadmap.md", "docs/roadmaps/roadmap.md"]
+labels = ["conductor", "repo:tv7-core"]
+validation_commands = ["make conductor-status", "make conductor-events"]
+automation_level = "plan"
+
+[repos.tv7-conductor]
+path = "tv7-conductor"
+roadmap_sources = ["docs/roadmaps/tv7-conductor-roadmap.md"]
+labels = ["conductor", "repo:tv7-conductor"]
+validation_commands = ["PYTHONPATH=tooling python3 -m unittest discover -s tooling/tests/orchestrator -p 'test_*.py'"]
+automation_level = "plan"
+
+[repos.tv7-fastapi-backend]
+path = "tv7-fastapi-backend"
+roadmap_sources = ["../tv7-core/docs/roadmaps/tv7-fastapi-backend-roadmap.md"]
+labels = ["conductor", "repo:tv7-fastapi-backend"]
+validation_commands = ["make check"]
+automation_level = "plan"
+
+[repos.tv7-fastapi-backend.preview]
+command = "PORT=${CONDUCTOR_PREVIEW_PORT} make dev"
+default_port = 5000
+preview_port = 5001
+health_url = "http://localhost:${CONDUCTOR_PREVIEW_PORT}/health"
+
+[repos.tv7-astro-site]
+path = "tv7-astro-site"
+roadmap_sources = ["../tv7-core/docs/roadmaps/tv7-astro-site-roadmap.md"]
+labels = ["conductor", "repo:tv7-astro-site"]
+validation_commands = ["npm run check"]
+automation_level = "plan"
+
+[repos.tv7-astro-site.preview]
+command = "npm run dev -- --host 127.0.0.1 --port ${CONDUCTOR_PREVIEW_PORT}"
+default_port = 4321
+preview_port = 4322
+health_url = "http://localhost:${CONDUCTOR_PREVIEW_PORT}/"
+
+[repos.tv7-axum-engine]
+path = "tv7-axum-engine"
+roadmap_sources = ["../tv7-core/docs/roadmaps/tv7-axum-engine-roadmap.md"]
+labels = ["conductor", "repo:tv7-axum-engine"]
+validation_commands = ["cargo check"]
+automation_level = "plan"
+
+[repos.tv7-flutter-studio]
+path = "tv7-flutter-studio"
+roadmap_sources = ["../tv7-core/docs/roadmaps/tv7-flutter-studio-roadmap.md"]
+labels = ["conductor", "repo:tv7-flutter-studio"]
+validation_commands = ["flutter test"]
+automation_level = "plan"

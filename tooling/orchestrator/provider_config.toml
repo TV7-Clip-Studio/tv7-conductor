@@ -1,0 +1,45 @@
+[providers.gemini_cli_planner]
+role = "planner"
+kind = "local_command"
+command = "gemini"
+model = "gemini-2.5-pro"
+timeout_sec = 600
+retries = 0
+paid = false
+notes = "Default local planner profile."
+
+[providers.ao_codex_executor]
+role = "executor"
+kind = "ao"
+command = "ao"
+model = "gpt-5-codex"
+timeout_sec = 1200
+retries = 1
+paid = false
+notes = "AO is one executor provider wrapping local Codex CLI sessions."
+
+[providers.local_command_reviewer]
+role = "reviewer"
+kind = "local_command"
+command = ""
+model = ""
+timeout_sec = 600
+retries = 0
+paid = false
+notes = "Default local review provider; concrete commands are supplied by repo/profile or CLI."
+
+[providers.deepseek_api_reviewer]
+role = "reviewer"
+kind = "api"
+command = "deepseek"
+model = "deepseek-reasoner"
+timeout_sec = 600
+retries = 1
+paid = true
+notes = "Optional paid/API reviewer for external review paths."
+
+[defaults]
+planner = "gemini_cli_planner"
+executor = "ao_codex_executor"
+reviewer = "local_command_reviewer"
+allow_paid_review = false

@@ -1,0 +1,11 @@
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.DS_Store
+**/.DS_Store
+.pytest_cache/
+.venv/
+
+docs/.conductor/
+docs/.tmp/
