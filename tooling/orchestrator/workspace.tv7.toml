@@ -4,9 +4,14 @@ state_dir = "../../docs/.conductor"
 
 [repos.tv7-core]
 path = "tv7-core"
-roadmap_sources = ["docs/roadmaps/core/project-conductor-roadmap.md", "docs/roadmaps/roadmap.md"]
+roadmap_sources = [
+  "docs/roadmaps/tv7-core-roadmap.md",
+  "docs/roadmaps/core/agent-orchestration-roadmap.md",
+  "docs/roadmaps/core/project-conductor-roadmap.md",
+  "docs/roadmaps/roadmap.md",
+]
 labels = ["conductor", "repo:tv7-core"]
-validation_commands = ["make conductor-status", "make conductor-events"]
+validation_commands = ["make conductor-shim-check"]
 automation_level = "plan"
 
 [repos.tv7-conductor]
@@ -18,9 +23,12 @@ automation_level = "plan"
 
 [repos.tv7-fastapi-backend]
 path = "tv7-fastapi-backend"
-roadmap_sources = ["../tv7-core/docs/roadmaps/tv7-fastapi-backend-roadmap.md"]
+roadmap_sources = [
+  "../tv7-core/docs/roadmaps/tv7-fastapi-backend-roadmap.md",
+  "../tv7-core/docs/roadmaps/tv7-fastapi-backend-off-roadmap.md",
+]
 labels = ["conductor", "repo:tv7-fastapi-backend"]
-validation_commands = ["make check"]
+validation_commands = ["make lint", "make type", "make test"]
 automation_level = "plan"
 
 [repos.tv7-fastapi-backend.preview]
@@ -33,7 +41,7 @@ health_url = "http://localhost:${CONDUCTOR_PREVIEW_PORT}/health"
 path = "tv7-astro-site"
 roadmap_sources = ["../tv7-core/docs/roadmaps/tv7-astro-site-roadmap.md"]
 labels = ["conductor", "repo:tv7-astro-site"]
-validation_commands = ["npm run check"]
+validation_commands = ["npm run build"]
 automation_level = "plan"
 
 [repos.tv7-astro-site.preview]
@@ -46,12 +54,12 @@ health_url = "http://localhost:${CONDUCTOR_PREVIEW_PORT}/"
 path = "tv7-axum-engine"
 roadmap_sources = ["../tv7-core/docs/roadmaps/tv7-axum-engine-roadmap.md"]
 labels = ["conductor", "repo:tv7-axum-engine"]
-validation_commands = ["cargo check"]
+validation_commands = ["make check", "make test"]
 automation_level = "plan"
 
 [repos.tv7-flutter-studio]
 path = "tv7-flutter-studio"
 roadmap_sources = ["../tv7-core/docs/roadmaps/tv7-flutter-studio-roadmap.md"]
 labels = ["conductor", "repo:tv7-flutter-studio"]
-validation_commands = ["flutter test"]
+validation_commands = ["make check"]
 automation_level = "plan"

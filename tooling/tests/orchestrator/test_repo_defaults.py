@@ -10,8 +10,8 @@ class RepoDefaultsTests(unittest.TestCase):
         backend = repo_defaults_for("tv7-fastapi-backend")
         studio = repo_defaults_for("tv7-flutter-studio")
         self.assertNotEqual(backend.validation_commands, studio.validation_commands)
-        self.assertIn("pytest", backend.validation_commands)
-        self.assertIn("flutter test", studio.validation_commands)
+        self.assertIn("make test", backend.validation_commands)
+        self.assertIn("make check", studio.validation_commands)
 
     def test_owner_hints_loaded(self) -> None:
         core = repo_defaults_for("tv7-core")
