@@ -1,0 +1,43 @@
+[timeouts]
+plan_sec = 120
+seed_assess_sec = 300
+expand_item_sec = 300
+execute_repo_sec = 1200
+review_loop_sec = 900
+integrate_repo_sec = 1800
+
+[retries]
+plan = 0
+seed_assess = 1
+expand = 1
+execute = 1
+review_loops = 2
+integrate = 1
+
+[escalation]
+state_load_failure = "needs-human"
+off_scope_detection = "needs-human"
+review_loop_exhausted = "needs-human"
+
+[human_override]
+require_scoped_filters = true
+require_dry_run_before_apply = true
+
+[stages.plan]
+on_non_zero_exit = "stop"
+
+[stages.seed]
+assess_failure_non_strict = "fallback"
+assess_failure_strict = "stop"
+
+[stages.expand]
+schema_validation_failure = "retry_then_escalate"
+
+[stages.execute]
+agent_failure = "retry_then_escalate"
+
+[stages.review]
+max_loops_action = "escalate"
+
+[stages.integrate]
+validation_failure = "block_completion"

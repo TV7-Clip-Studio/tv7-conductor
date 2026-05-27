@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tv7-conductor"
+version = "0.1.0"
+description = "Local-first orchestration runtime for TV7 multi-repo agent workflows."
+requires-python = ">=3.11"
+dependencies = []
+
+[project.optional-dependencies]
+web = [
+  "fastapi>=0.115",
+  "jinja2>=3.1",
+  "sqlmodel>=0.0.22",
+  "uvicorn[standard]>=0.30",
+]
+dev = []
+
+[project.scripts]
+tv7-conductor = "orchestrator.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["tooling"]
+include = ["orchestrator*"]
