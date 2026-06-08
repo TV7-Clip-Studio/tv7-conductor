@@ -4,10 +4,12 @@ import argparse
 import copy
 import importlib.util
 import json
+import os
 from pathlib import Path
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 
 from .agent_profiles import list_profiles, resolve_profile
@@ -1982,7 +1984,6 @@ BODY:
 
 
 def cmd_resolve_pr_review(args: argparse.Namespace) -> int:
-    import os
     import re
     repo_path = Path(args.repo).expanduser()
     if not repo_path.is_absolute():
@@ -1998,7 +1999,6 @@ def cmd_resolve_pr_review(args: argparse.Namespace) -> int:
             path.parent.mkdir(parents=True, exist_ok=True)
             return path
         except OSError:
-            import tempfile
             temp_dir = Path(tempfile.mkdtemp(prefix="tv7-conductor-pr-review-"))
             return temp_dir / name
 
@@ -2170,7 +2170,13 @@ def cmd_resolve_pr_review(args: argparse.Namespace) -> int:
                 line = raw.strip()
                 if not line:
                     continue
-                if line.startswith(("-", "*")) or line.lower().startswith(("files", "changes", "plan")):
+                if line in {"codex", "tokens used"}:
+                    continue
+                if line.startswith(("-", "*")):
+                    candidate = line.lstrip("-* ").strip()
+                    if candidate:
+                        lines.append(candidate)
+                elif line.lower().startswith(("files", "changes", "plan")):
                     lines.append(line)
                 if len(lines) >= 6:
                     break
@@ -2181,9 +2187,85 @@ def cmd_resolve_pr_review(args: argparse.Namespace) -> int:
         if lines:
             print("Codex plan summary:")
             for line in lines[:4]:
-                print(f"  - {line.lstrip('-* ').strip()}")
+                print(f"  - {line}")
         else:
             print("Codex plan summary: see saved log for details.")
+
+    def extract_codex_final_message(log_path: Path, *, limit: int = 8) -> list[str]:
+        try:
+            text = log_path.read_text()
+        except OSError:
+            return []
+
+        sections = re.split(r"(?m)^codex\s*$", text)
+        section = sections[-1] if sections else text
+        section = re.split(r"(?m)^tokens used\s*$", section)[0]
+        section = re.split(r"(?m)^diff --git ", section)[0]
+
+        lines: list[str] = []
+        for raw in section.splitlines():
+            line = raw.strip()
+            if not line:
+                continue
+            if line.startswith(("warning:", "OpenAI Codex", "--------", "workdir:", "model:", "provider:", "approval:", "sandbox:", "reasoning", "session id:", "user")):
+                continue
+            if line.startswith(("exec", "/bin/", "succeeded in", "failed in")):
+                continue
+            if line in {"codex"}:
+                continue
+            lines.append(line)
+            if len(lines) >= limit:
+                break
+        return lines
+
+    def print_codex_message(title: str, log_path: Path) -> None:
+        lines = extract_codex_final_message(log_path)
+        print(f"\n{title}:")
+        if not lines:
+            print(f"  See saved log: {display_artifact_path(log_path)}")
+            return
+        for line in lines:
+            print(f"  {line}")
+
+    def changed_files_from_status(status_output: str) -> list[str]:
+        files: list[str] = []
+        for line in status_output.splitlines():
+            if not line:
+                continue
+            status_part = line[:2]
+            file_part = line[3:].strip()
+            if " -> " in file_part:
+                file_part = file_part.split(" -> ", 1)[1].strip()
+            if status_part == "??" or any(ch in status_part for ch in "MADRC"):
+                files.append(file_part)
+        return files
+
+    def unmerged_files() -> list[str]:
+        res = subprocess.run(
+            ["git", "diff", "--name-only", "--diff-filter=U"],
+            cwd=str(repo_path),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        return [line.strip() for line in res.stdout.splitlines() if line.strip()]
+
+    def stage_pr_review_files(files: list[str]) -> bool:
+        unresolved = unmerged_files()
+        if unresolved:
+            print("Cannot stage review fixes while merge conflicts remain:")
+            for path in unresolved:
+                print(f"  - {path}")
+            return False
+
+        for f in files:
+            print(f"Staging changed file: {f}")
+            subprocess.run(
+                ["git", "add", "--", f],
+                cwd=str(repo_path),
+                check=False,
+            )
+        return True
 
     def get_item_timestamp(item):
         for key in ["submittedAt", "createdAt", "submitted_at", "created_at"]:
@@ -2229,6 +2311,8 @@ def cmd_resolve_pr_review(args: argparse.Namespace) -> int:
     last_processed_timestamp = None
     poll_interval = 10
     timeout = 180  # 3 minutes
+    max_resolution_cycles = 3
+    resolution_cycles = 0
 
     while True:
         # Polling for DeepSeek review comments
@@ -2405,6 +2489,7 @@ DeepSeek review findings:
             label="Running Codex technical plan",
         )
         print_codex_plan_summary(plan_path)
+        print_codex_message("Codex plan approach", plan_path)
         if rc_plan != 0:
             return rc_plan
 
@@ -2443,6 +2528,7 @@ DeepSeek review findings:
             )
             if rc_resolve != 0:
                 return rc_resolve
+            print_codex_message("Codex resolution", log_path)
 
             # Check if changes were made
             res_status = subprocess.run(
@@ -2452,15 +2538,7 @@ DeepSeek review findings:
                 text=True,
                 check=False,
             )
-            modified_files = []
-            for line in res_status.stdout.splitlines():
-                line_strip = line.strip()
-                if not line_strip:
-                    continue
-                status_part = line_strip[:2]
-                file_part = line_strip[2:].strip()
-                if 'M' in status_part or 'A' in status_part or 'D' in status_part:
-                    modified_files.append(file_part)
+            modified_files = changed_files_from_status(res_status.stdout)
 
             if not modified_files:
                 print("\nNo code changes were made by Codex.")
@@ -2476,20 +2554,9 @@ DeepSeek review findings:
 
             # Staging resolved files
             print("\nCodex completed successfully. Staging modified files...")
-            for f in modified_files:
-                file_path = repo_path / f
-                if file_path.is_file():
-                    try:
-                        content = file_path.read_text()
-                        if "<<<<<<<" not in content and "=======" not in content and ">>>>>>>" not in content:
-                            print(f"Staging resolved file: {f}")
-                            subprocess.run(
-                                ["git", "add", f],
-                                cwd=str(repo_path),
-                                check=False,
-                            )
-                    except Exception as e:
-                        print(f"Error staging {f}: {e}")
+            if not stage_pr_review_files(modified_files):
+                print("Review fixes were left unstaged. Resolve conflicts and rerun the PR review flow.")
+                return 1
 
             res_verify = subprocess.run(
                 ["git", "diff", "--name-only"],
@@ -2500,7 +2567,10 @@ DeepSeek review findings:
             )
             remaining = [line.strip() for line in res_verify.stdout.splitlines() if line.strip()]
             if remaining:
-                print("Some changes are still unstaged. Please review manually.")
+                print("Some changes are still unstaged after staging review fixes:")
+                for path in remaining:
+                    print(f"  - {path}")
+                print("Review the listed files, then rerun the PR review flow.")
                 return 1
 
             # Commit and push changes
@@ -2527,7 +2597,18 @@ DeepSeek review findings:
                 print("Error pushing to remote. Exiting.")
                 return res_push.returncode
 
+            if deepseek_review_time is None:
+                print("Error: DeepSeek review timestamp was not available after processing.")
+                return 1
+
             last_processed_timestamp = deepseek_review_time
+            resolution_cycles += 1
+            if resolution_cycles >= max_resolution_cycles:
+                print(
+                    f"\nReached maximum automatic review resolution cycles "
+                    f"({max_resolution_cycles}). Rerun this command to continue."
+                )
+                return 1
             print("\nWaiting for the new DeepSeek review comment to be posted...")
 
 
@@ -2574,7 +2655,6 @@ def cmd_resolve_conflicts(args: argparse.Namespace) -> int:
         log_file = open(log_path, "w")
         display_path = log_path.relative_to(repo_path)
     except OSError:
-        import tempfile
         temp_file = tempfile.NamedTemporaryFile(prefix="codex-resolve-conflicts-", suffix=".log", delete=False)
         log_path = Path(temp_file.name)
         log_file = open(log_path, "w")
@@ -2678,9 +2758,6 @@ def cmd_resolve_conflicts(args: argparse.Namespace) -> int:
         else:
             print("Success! All conflicts resolved.")
             return 0
-    else:
-        print(f"\nCodex execution failed with exit code {result.returncode}.")
-        return result.returncode
 
 
 def build_parser() -> argparse.ArgumentParser:

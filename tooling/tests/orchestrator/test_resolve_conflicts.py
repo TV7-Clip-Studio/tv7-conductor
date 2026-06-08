@@ -298,6 +298,68 @@ class ResolveConflictsTests(unittest.TestCase):
             rc = cli.main(["resolve-pr-review", "--repo", "/dummy/repo"])
             self.assertEqual(rc, 0)
 
+    @patch("subprocess.run")
+    @patch("subprocess.Popen")
+    @patch("builtins.input")
+    def test_resolve_pr_review_stages_files_with_conflict_detector_strings(
+        self,
+        mock_input: MagicMock,
+        mock_popen: MagicMock,
+        mock_run: MagicMock,
+    ) -> None:
+        with patch("pathlib.Path.is_dir", return_value=True), \
+             patch("builtins.open", unittest.mock.mock_open()):
+            mock_pr_view = MagicMock(returncode=0, stdout='{"number": 42, "url": "https://github.com/TV7-Clip-Studio/tv7-core/pull/42"}')
+            mock_branch = MagicMock(returncode=0, stdout='feat-test')
+            mock_poll = MagicMock(returncode=0, stdout='{"reviews": [], "comments": [{"body": "DeepSeek review FINAL_VERDICT: REJECTED (55%)\\n### Findings\\n- Fix cli.py", "createdAt": "2026-06-08T00:52:49Z"}]}')
+            mock_gemini = MagicMock(
+                returncode=0,
+                stdout="""Loaded cached credentials.
+### Summary of Findings
+- Fix this
+
+### Files to Modify
+- tooling/orchestrator/cli.py: fix review flow
+
+### Additional Technical Context
+- File intentionally contains conflict marker detector strings.
+"""
+            )
+
+            mock_input.side_effect = ["1", "2"]
+
+            plan_process = MagicMock()
+            plan_process.returncode = 0
+            plan_process.stdout = ["codex\n", "- Inspect cli.py\n"]
+            resolve_process = MagicMock()
+            resolve_process.returncode = 0
+            resolve_process.stdout = ["codex\n", "Implemented review flow fix.\n"]
+            mock_popen.side_effect = [plan_process, resolve_process]
+
+            mock_status = MagicMock(returncode=0, stdout=" M tooling/orchestrator/cli.py\n")
+            mock_unmerged = MagicMock(returncode=0, stdout="")
+            mock_add = MagicMock(returncode=0)
+            mock_verify = MagicMock(returncode=0, stdout="")
+            mock_commit = MagicMock(returncode=1)
+
+            mock_run.side_effect = [
+                mock_pr_view,
+                mock_branch,
+                mock_poll,
+                mock_gemini,
+                mock_status,
+                mock_unmerged,
+                mock_add,
+                mock_verify,
+                mock_commit,
+            ]
+
+            rc = cli.main(["resolve-pr-review", "--repo", "/dummy/repo"])
+
+            self.assertEqual(rc, 1)
+            add_calls = [call for call in mock_run.call_args_list if call[0][0] == ["git", "add", "--", "tooling/orchestrator/cli.py"]]
+            self.assertEqual(len(add_calls), 1)
+
 
 if __name__ == "__main__":
     unittest.main()
