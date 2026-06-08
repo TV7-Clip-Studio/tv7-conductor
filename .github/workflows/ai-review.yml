@@ -1,0 +1,64 @@
+name: AI Code Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  determine-context:
+    runs-on: ubuntu-latest
+    outputs:
+      info: ${{ steps.context.outputs.info }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Determine Conductor context
+        id: context
+        run: |
+          set -eo pipefail
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          import tomllib
+          from pathlib import Path
+
+          pyproject = Path("pyproject.toml")
+          package = "tv7-conductor"
+          python_req = "unknown"
+          description = "Standalone orchestration runtime used primarily for TV7 multi-repo agent workflows."
+
+          if pyproject.exists():
+              data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
+              project = data.get("project", {})
+              package = project.get("name", package)
+              python_req = project.get("requires-python", python_req)
+              description = project.get("description", description)
+
+          modules = []
+          module_root = Path("tooling/orchestrator")
+          if module_root.exists():
+              for path in sorted(module_root.glob("*.py")):
+                  if path.name == "__init__.py":
+                      continue
+                  modules.append(path.stem.replace("_", "-"))
+                  if len(modules) >= 8:
+                      break
+
+          info = (
+              f"{package}: Python {python_req}; {description} "
+              "Review as TV7's orchestration/conductor repo, with attention to roadmap lifecycle, "
+              "GitHub/PR automation, provider policy, state/report safety, and multi-repo naming consistency. "
+              f"Key modules: {', '.join(modules) if modules else 'n/a'}."
+          )
+          print(f"info={info}")
+          PY
+
+  deepseek-review:
+    needs: determine-context
+    uses: TV7-Clip-Studio/tv7-core/.github/workflows/deepseek-review.yml@main
+    with:
+      project_context: ${{ needs.determine-context.outputs.info }}
+      architecture_doc: docs/repos/core/project-conductor-runbook.md
+    secrets: inherit
