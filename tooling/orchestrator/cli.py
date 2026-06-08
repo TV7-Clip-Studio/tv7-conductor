@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import argparse
 import copy
+from datetime import datetime, timezone
 import importlib.util
 import json
 import os
+import random
 import re
 from pathlib import Path
 import shutil
@@ -2084,6 +2086,33 @@ def cmd_resolve_pr_review(args: argparse.Namespace) -> int:
             print("Target files: none")
 
     def merge_pr_and_delete_branch(target_branch: str) -> int:
+        res_state = subprocess.run(
+            ["gh", "pr", "view", "--json", "mergeable,state"],
+            cwd=str(repo_path),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if res_state.returncode != 0:
+            print("Error checking PR mergeability. Please resolve on GitHub.")
+            return 1
+
+        try:
+            pr_state = json.loads(res_state.stdout)
+        except json.JSONDecodeError as e:
+            print(f"Error parsing PR mergeability status: {e}")
+            return 1
+
+        state = str(pr_state.get("state", "")).upper()
+        mergeable = str(pr_state.get("mergeable", "")).upper()
+        if state != "OPEN":
+            print(f"Cannot merge PR because its state is {state or 'UNKNOWN'}.")
+            return 1
+        if mergeable not in {"MERGEABLE", "TRUE"}:
+            print(f"Cannot merge PR because mergeability is {mergeable or 'UNKNOWN'}.")
+            print("Resolve conflicts and required checks on GitHub, then rerun this command.")
+            return 1
+
         print("Merging Pull Request...")
         res_merge = subprocess.run(
             ["gh", "pr", "merge", "--merge", "--delete-branch"],
@@ -2105,7 +2134,8 @@ def cmd_resolve_pr_review(args: argparse.Namespace) -> int:
         return 0
 
     def codex_command(read_only: bool) -> list[str]:
-        cmd = ["codex", "exec", "--full-auto", "-m", "gpt-5.5", "-c", "reasoning_effort=low"]
+        model = os.environ.get("TV7_CODEX_MODEL", "").strip() or "gpt-5-codex"
+        cmd = ["codex", "exec", "--full-auto", "-m", model, "-c", "reasoning_effort=low"]
         if read_only:
             cmd.extend(["-s", "read-only"])
         cmd.extend(["-C", str(repo_path), "-"])
@@ -2267,12 +2297,32 @@ def cmd_resolve_pr_review(args: argparse.Namespace) -> int:
             )
         return True
 
-    def get_item_timestamp(item):
+    def parse_github_timestamp(value: object) -> datetime | None:
+        raw = str(value or "").strip()
+        if not raw:
+            return None
+        normalized = raw[:-1] + "+00:00" if raw.endswith("Z") else raw
+        try:
+            parsed = datetime.fromisoformat(normalized)
+        except ValueError:
+            return None
+        if parsed.tzinfo is None:
+            return parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc)
+
+    def get_item_timestamp(item) -> datetime | None:
         for key in ["submittedAt", "createdAt", "submitted_at", "created_at"]:
             val = item.get(key)
             if val:
-                return str(val)
-        return ""
+                parsed = parse_github_timestamp(val)
+                if parsed is not None:
+                    return parsed
+        return None
+
+    def next_poll_delay(attempt: int, remaining: float) -> float:
+        base_delay = min(30.0, 5.0 * (2 ** max(attempt - 1, 0)))
+        jitter = random.uniform(0.0, min(3.0, base_delay * 0.25))
+        return max(0.0, min(remaining, base_delay + jitter))
 
     # 1. Fetch current open PR comments
     print("Retrieving PR details from GitHub...")
@@ -2308,17 +2358,17 @@ def cmd_resolve_pr_review(args: argparse.Namespace) -> int:
     branch_name = res_branch.stdout.strip()
 
     # Loop for automatic review resolution
-    last_processed_timestamp = None
-    poll_interval = 10
-    timeout = 180  # 3 minutes
+    last_processed_timestamp: datetime | None = None
+    timeout = 600  # 10 minutes
     max_resolution_cycles = 3
     resolution_cycles = 0
 
     while True:
         # Polling for DeepSeek review comments
         deepseek_review_text = ""
-        deepseek_review_time = None
+        deepseek_review_time: datetime | None = None
         start_time = time.time()
+        poll_attempt = 0
 
         print("\nChecking for DeepSeek review comment on GitHub...")
         while True:
@@ -2340,7 +2390,10 @@ def cmd_resolve_pr_review(args: argparse.Namespace) -> int:
                         items.append(c)
 
                     # Sort items by timestamp descending to get the most recent first
-                    items.sort(key=get_item_timestamp, reverse=True)
+                    items.sort(
+                        key=lambda item: get_item_timestamp(item) or datetime.min.replace(tzinfo=timezone.utc),
+                        reverse=True,
+                    )
 
                     # Search for DeepSeek bot reviews
                     for item in items:
@@ -2348,7 +2401,9 @@ def cmd_resolve_pr_review(args: argparse.Namespace) -> int:
                         if "DeepSeek review" in body:
                             timestamp = get_item_timestamp(item)
                             # If we have a last_processed_timestamp, make sure this one is newer!
-                            if last_processed_timestamp is None or timestamp > last_processed_timestamp:
+                            if timestamp is not None and (
+                                last_processed_timestamp is None or timestamp > last_processed_timestamp
+                            ):
                                 deepseek_review_text = body
                                 deepseek_review_time = timestamp
                                 break
@@ -2366,8 +2421,14 @@ def cmd_resolve_pr_review(args: argparse.Namespace) -> int:
                     print("No new review posted after our push. You can rerun this command once the review is posted.")
                 return 1
 
-            print(f"Waiting for DeepSeek review... ({int(elapsed)}s elapsed)", end="\r", flush=True)
-            time.sleep(poll_interval)
+            poll_attempt += 1
+            delay = next_poll_delay(poll_attempt, timeout - elapsed)
+            print(
+                f"Waiting for DeepSeek review... ({int(elapsed)}s elapsed, next check in {delay:.1f}s)",
+                end="\r",
+                flush=True,
+            )
+            time.sleep(delay)
 
         review_display_path = write_artifact(
             f"deepseek-review-pr-{pr_number}.md",
@@ -2719,13 +2780,9 @@ def cmd_resolve_conflicts(args: argparse.Namespace) -> int:
             pass
         return p.returncode
 
-    # Clean up log file on success
-    try:
-        log_path.unlink()
-    except Exception:
-        pass
     if p.returncode == 0:
-        print("\nCodex completed successfully. Checking if conflicts are resolved...")
+        print(f"\nCodex completed successfully. Log retained at: {display_path}")
+        print("Checking if conflicts are resolved...")
         # Auto-stage files that no longer contain conflict markers
         for f in unmerged_files:
             file_path = repo_path / f

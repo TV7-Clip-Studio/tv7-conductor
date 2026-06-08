@@ -231,6 +231,7 @@ class ResolveConflictsTests(unittest.TestCase):
 """
             )
             mock_analysis = MagicMock(returncode=0)
+            mock_mergeable = MagicMock(returncode=0, stdout='{"mergeable": "MERGEABLE", "state": "OPEN"}')
             mock_merge = MagicMock(returncode=0)
             mock_checkout = MagicMock(returncode=0)
             mock_pull = MagicMock(returncode=0)
@@ -241,8 +242,7 @@ class ResolveConflictsTests(unittest.TestCase):
                 mock_pr_view,
                 mock_branch,
                 mock_poll,
-                mock_gemini,
-                mock_analysis,
+                mock_mergeable,
                 mock_merge,
                 mock_checkout,
                 mock_pull,
@@ -252,6 +252,28 @@ class ResolveConflictsTests(unittest.TestCase):
 
             rc = cli.main(["resolve-pr-review", "--repo", "/dummy/repo"])
             self.assertEqual(rc, 0)
+
+    @patch("subprocess.run")
+    @patch("builtins.input", return_value="2")
+    def test_resolve_pr_review_blocks_unmergeable_pr(self, mock_input: MagicMock, mock_run: MagicMock) -> None:
+        with patch("pathlib.Path.is_dir", return_value=True):
+            mock_pr_view = MagicMock(returncode=0, stdout='{"number": 42, "url": "https://github.com/TV7-Clip-Studio/tv7-core/pull/42"}')
+            mock_branch = MagicMock(returncode=0, stdout='feat-test')
+            mock_poll = MagicMock(returncode=0, stdout='{"reviews": [], "comments": [{"body": "DeepSeek review FINAL_VERDICT: APPROVED (95%)", "createdAt": "2026-06-08T00:52:49Z"}]}')
+            mock_mergeable = MagicMock(returncode=0, stdout='{"mergeable": "CONFLICTING", "state": "OPEN"}')
+
+            mock_run.side_effect = [
+                mock_pr_view,
+                mock_branch,
+                mock_poll,
+                mock_mergeable,
+            ]
+
+            rc = cli.main(["resolve-pr-review", "--repo", "/dummy/repo"])
+
+            self.assertEqual(rc, 1)
+            merge_calls = [call for call in mock_run.call_args_list if call[0][0] == ["gh", "pr", "merge", "--merge", "--delete-branch"]]
+            self.assertEqual(merge_calls, [])
 
     @patch("subprocess.run")
     @patch("subprocess.Popen")
@@ -297,11 +319,15 @@ class ResolveConflictsTests(unittest.TestCase):
 
             rc = cli.main(["resolve-pr-review", "--repo", "/dummy/repo"])
             self.assertEqual(rc, 0)
+            for popen_call in mock_popen.call_args_list:
+                command = popen_call[0][0]
+                self.assertIn("gpt-5-codex", command)
+                self.assertNotIn("gpt-5.5", command)
 
     @patch("subprocess.run")
     @patch("subprocess.Popen")
     @patch("builtins.input")
-    def test_resolve_pr_review_stages_files_with_conflict_detector_strings(
+    def test_resolve_pr_review_stages_files_and_commit_fails(
         self,
         mock_input: MagicMock,
         mock_popen: MagicMock,
