@@ -87,6 +87,7 @@ Every created/linked issue gets:
 - `stage:seed`
 - Optional repo defaults labels from `repo_defaults.toml`
 
+<<<<<<< Updated upstream
 Label assertion helper:
 ```bash
 cd tv7-core
@@ -96,6 +97,15 @@ python3 tooling/orchestrator/verify_seed_labels.py \
   --target-repo tv7-core \
   --batch-id <batch-id>
 ```
+=======
+Conductor reads roadmap sources, resolves item repo targets, and then syncs issues to the matching GitHub repo:
+- `tv7-conductor` items -> `TV7-Clip-Studio/tv7-conductor`
+- `tv7-core` items -> `TV7-Clip-Studio/tv7-core`
+- `tv7-backend` items -> `TV7-Clip-Studio/tv7-backend`
+- `tv7-studio` items -> `TV7-Clip-Studio/tv7-studio`
+- `tv7-site` items -> `TV7-Clip-Studio/tv7-site`
+- `tv7-engine` items -> `TV7-Clip-Studio/tv7-engine`
+>>>>>>> Stashed changes
 
 ## Scope Filters
 Use any combination of:
@@ -126,6 +136,7 @@ Apply-mode commands enforce the configured level for known repos:
 
 Dry-run commands remain available below those levels.
 
+<<<<<<< Updated upstream
 ## Operator Summaries
 Conductor stage commands print an `Operator summary` after the headline result. The block includes:
 - stage and mode
@@ -133,9 +144,18 @@ Conductor stage commands print an `Operator summary` after the headline result. 
 - report paths
 - risks surfaced by the command
 - next recommended operator action
+=======
+```bash
+make conductor-prepare-worktree \
+  CONDUCTOR_REPO=tv7-site \
+  CONDUCTOR_ITEM_ID=SI-A01-02-01 \
+  CONDUCTOR_APPLY=1
+```
+>>>>>>> Stashed changes
 
 Treat the summary as the handoff between commands; inspect the linked report before any apply-mode follow-up.
 
+<<<<<<< Updated upstream
 ## Notes
 - `make conductor-run` executes `plan` then `tickets` in one command.
 - `CONDUCTOR_RUN_FLAGS` is a direct passthrough to `tooling/conductor_run.py`.
@@ -150,3 +170,103 @@ Treat the summary as the handoff between commands; inspect the linked report bef
 - `make conductor-external-review` supports `CONDUCTOR_REVIEW_PROVIDER`, `CONDUCTOR_REVIEW_ALLOW_PAID=1`, `CONDUCTOR_REVIEW_MAX_LOOPS`, optional `CONDUCTOR_ITEM_ID`, and `CONDUCTOR_APPLY=1`. Treat it as the external review gate after local review and operator PR action.
 - `make conductor-review` remains a compatibility alias for `make conductor-external-review`.
 - Provider config lives in `tooling/orchestrator/provider_config.toml`. `tickets` and `expand` resolve planner defaults, `execute` resolves an AO executor provider, `local-review` resolves a local command reviewer, and external API review requires an explicit paid-review opt-in.
+=======
+```bash
+make conductor-prepare-worktree \
+  CONDUCTOR_REPO=tv7-backend \
+  CONDUCTOR_REPO_PATH=../tv7-backend \
+  CONDUCTOR_ITEM_ID=BE-A01-02-01 \
+  CONDUCTOR_APPLY=1
+```
+
+Conductor reports:
+- worktree path
+- branch
+- changed files
+- preview command/port metadata when supplied
+- explicit cleanup command
+
+## Preview Flow
+Launch a configured preview from an isolated worktree:
+
+```bash
+make conductor-launch-preview \
+  CONDUCTOR_REPO=tv7-site \
+  CONDUCTOR_ITEM_ID=SI-A01-02-01 \
+  CONDUCTOR_WORKTREE_PATH=docs/.conductor/worktrees/tv7-site/SI-A01-02-01 \
+  CONDUCTOR_PREVIEW_PORT=4322 \
+  CONDUCTOR_PREVIEW_COMMAND="npm run dev -- --host 127.0.0.1 --port 4322" \
+  CONDUCTOR_HEALTH_URL="http://localhost:4322/"
+```
+
+Preview reports include PID, log path, preview URL, health URL, and stop command.
+Do not stop unrelated developer services.
+
+## Validation And Local Review
+Validate a worktree:
+
+```bash
+make conductor-validate-worktree \
+  CONDUCTOR_REPO=tv7-site \
+  CONDUCTOR_ITEM_ID=SI-A01-02-01 \
+  CONDUCTOR_WORKTREE_PATH=docs/.conductor/worktrees/tv7-site/SI-A01-02-01 \
+  CONDUCTOR_VALIDATION_COMMAND="npm run build"
+```
+
+Run local review:
+
+```bash
+make conductor-local-review \
+  CONDUCTOR_REPO=tv7-site \
+  CONDUCTOR_ITEM_ID=SI-A01-02-01 \
+  CONDUCTOR_WORKTREE_PATH=docs/.conductor/worktrees/tv7-site/SI-A01-02-01 \
+  CONDUCTOR_LOCAL_REVIEW_COMMAND="npm run build" \
+  CONDUCTOR_APPLY=1
+```
+
+Local review apply mode requires the repo automation level to allow review.
+Keep repo levels at `plan` until the operator intentionally raises them for a controlled batch.
+
+## External Review
+External review is PR-stage review. It expects linked PR metadata and is separate from local validation.
+
+```bash
+make conductor-external-review \
+  CONDUCTOR_REPO=tv7-site \
+  CONDUCTOR_ITEM_ID=SI-A01-02-01
+```
+
+Paid/API reviewers require explicit opt-in:
+
+```bash
+make conductor-external-review \
+  CONDUCTOR_REPO=tv7-site \
+  CONDUCTOR_ITEM_ID=SI-A01-02-01 \
+  CONDUCTOR_REVIEW_ALLOW_PAID=1 \
+  CONDUCTOR_APPLY=1
+```
+
+`make conductor-review` remains a compatibility alias for `make conductor-external-review`.
+
+## TV7 Repo Validation Defaults
+Keep these aligned with `workspace.tv7.toml` and `repo_defaults.toml`:
+
+| Repo | Validation |
+| --- | --- |
+| `tv7-core` | `make conductor-shim-check` |
+| `tv7-conductor` | `PYTHONPATH=tooling python3 -m unittest discover -s tooling/tests/orchestrator -p 'test_*.py'` |
+| `tv7-backend` | `make lint`, `make type`, `make test` |
+| `tv7-studio` | `make check` |
+| `tv7-site` | `npm run build` |
+| `tv7-engine` | `make check`, `make test` |
+
+## Safe Batch Practice
+1. Run all planning and issue sync commands in dry-run first.
+2. Keep scope filters tight: `--repo`, `--roadmap`, `--item-prefix`.
+3. Apply tickets one repo at a time.
+4. Expand one item or small prefix at a time.
+5. Execute only after expansion reports look correct.
+6. Run local review before PR action.
+7. Run external review after PR action.
+8. Do not delete state or worktrees without reviewing the printed report and cleanup command.
+>>>>>>> Stashed changes

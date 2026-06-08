@@ -8,6 +8,7 @@ validation_commands = ["make conductor-status", "make conductor-events"]
 extra_labels = ["area:core"]
 owner_hints = ["Architect Agent"]
 
+<<<<<<< Updated upstream
 [repos.tv7-fastapi-backend]
 validation_commands = ["make check", "pytest"]
 extra_labels = ["area:backend"]
@@ -25,5 +26,29 @@ owner_hints = ["Site Agent"]
 
 [repos.tv7-axum-engine]
 validation_commands = ["cargo check", "cargo clippy"]
+=======
+[repos.tv7-conductor]
+validation_commands = ["PYTHONPATH=tooling python3 -m unittest discover -s tooling/tests/orchestrator -p 'test_*.py'"]
+extra_labels = ["area:conductor"]
+owner_hints = ["Architect Agent"]
+
+[repos.tv7-backend]
+validation_commands = ["make lint", "make type", "make test"]
+extra_labels = ["area:backend"]
+owner_hints = ["Backend Agent"]
+
+[repos.tv7-studio]
+validation_commands = ["make check"]
+extra_labels = ["area:studio"]
+owner_hints = ["Studio Agent"]
+
+[repos.tv7-site]
+validation_commands = ["npm run build"]
+extra_labels = ["area:site"]
+owner_hints = ["Site Agent"]
+
+[repos.tv7-engine]
+validation_commands = ["make check", "make test"]
+>>>>>>> Stashed changes
 extra_labels = ["area:engine"]
 owner_hints = ["Engine Agent"]

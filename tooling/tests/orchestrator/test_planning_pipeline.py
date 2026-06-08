@@ -16,9 +16,9 @@ class PlanningPipelineTests(unittest.TestCase):
                 "\n".join(
                     [
                         "# IDEA",
-                        "- [CO-C01-05-11] Explicit item repos=tv7-core,tv7-astro-site batch=C01 epic=05",
+                        "- [CO-C01-05-11] Explicit item repos=tv7-core,tv7-site batch=C01 epic=05",
                         "- Queue bridge repo=tv7-core epic=05",
-                        "- Site docs touchpoint for tv7-astro-site batch=C01 epic=06",
+                        "- Site docs touchpoint for tv7-site batch=C01 epic=06",
                         "  - subtask should be ignored",
                     ]
                 )
@@ -42,9 +42,9 @@ class PlanningPipelineTests(unittest.TestCase):
 
             self.assertEqual([x.to_dict() for x in first], [x.to_dict() for x in second])
             self.assertEqual([x.item_id for x in first], ["CO-C01-05-11", "CO-C01-05-01", "CO-C01-06-01"])
-            self.assertEqual(first[0].repos, ["tv7-astro-site", "tv7-core"])
+            self.assertEqual(first[0].repos, ["tv7-core", "tv7-site"])
             self.assertEqual(first[1].repos, ["tv7-core"])
-            self.assertEqual(first[2].repos, ["tv7-astro-site"])
+            self.assertEqual(first[2].repos, ["tv7-site"])
 
     def test_queue_parity_matches_repo_targets(self) -> None:
         with tempfile.TemporaryDirectory(prefix="tv7-idea-") as td:
@@ -53,7 +53,7 @@ class PlanningPipelineTests(unittest.TestCase):
             idea_file.write_text(
                 "\n".join(
                     [
-                        "- Build router contract repos=tv7-core,tv7-astro-site batch=C01 epic=05",
+                        "- Build router contract repos=tv7-core,tv7-site batch=C01 epic=05",
                         "- Add retry note repo=tv7-core batch=C01 epic=05",
                     ]
                 )

@@ -25,17 +25,17 @@ class ExpandProviderTests(unittest.TestCase):
     def test_queue_payload_uses_cli_wording_not_antigravity(self) -> None:
         with tempfile.TemporaryDirectory(prefix="tv7-expand-provider-") as td:
             core_dir = Path(td)
-            defaults = repo_defaults_for("tv7-astro-site")
+            defaults = repo_defaults_for("tv7-site")
             item = {
-                "item_id": "ST-A01-02-01",
+                "item_id": "SI-A01-02-01",
                 "title": "Expand provider wording",
-                "source_file": "docs/roadmaps/tv7-astro-site-roadmap.md",
+                "source_file": "docs/roadmaps/tv7-site-roadmap.md",
                 "source_line": 15,
                 "tasks": ["One task"],
             }
             pending_path, _elapsed = _expand_with_cli_queue(
                 core_dir=core_dir,
-                repo="tv7-astro-site",
+                repo="tv7-site",
                 item=item,
                 defaults=defaults,
                 provider="gemini",
@@ -252,24 +252,24 @@ class ExpandProviderTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="tv7-expand-provider-") as td:
             core_dir = Path(td)
             item = {
-                "item_id": "ST-A01-02-01",
+                "item_id": "SI-A01-02-01",
                 "title": "Protect existing expansion quality",
                 "tasks": ["Keep strong expansion guidance when incoming payload is weak"],
-                "repos": ["tv7-astro-site"],
-                "source_file": str(core_dir / "docs/roadmaps/tv7-astro-site-roadmap.md"),
+                "repos": ["tv7-site"],
+                "source_file": str(core_dir / "docs/roadmaps/tv7-site-roadmap.md"),
                 "source_line": 15,
-                "issues": {"tv7-astro-site": {"url": "https://example.test/issue/28"}},
+                "issues": {"tv7-site": {"url": "https://example.test/issue/28"}},
             }
-            defaults = repo_defaults_for("tv7-astro-site")
+            defaults = repo_defaults_for("tv7-site")
             high_payload, _mode = _prepare_expansion_payload(
                 item=item,
-                repo="tv7-astro-site",
+                repo="tv7-site",
                 defaults=defaults,
                 raw_payload=None,
                 strict_expand=False,
             )
             strong_body, _changed = _upsert_expansion_block(
-                "## Orchestrator Work Item\n\n- Item ID: `ST-A01-02-01`\n",
+                "## Orchestrator Work Item\n\n- Item ID: `SI-A01-02-01`\n",
                 high_payload,
             )
             low_payload = {
@@ -285,7 +285,7 @@ class ExpandProviderTests(unittest.TestCase):
                 return {
                     "number": 28,
                     "url": "https://example.test/issue/28",
-                    "title": "[ST-A01-02-01] Protect existing expansion quality",
+                    "title": "[SI-A01-02-01] Protect existing expansion quality",
                     "state": "OPEN",
                     "body": strong_body,
                 }
@@ -304,7 +304,7 @@ class ExpandProviderTests(unittest.TestCase):
                     strict_expand=False,
                     batch_id="E2E-ASTRO-001",
                     progress=False,
-                    repo_filters=["tv7-astro-site"],
+                    repo_filters=["tv7-site"],
                     roadmap_filters=[],
                     item_prefix_filters=[],
                     limit=1,
@@ -325,13 +325,13 @@ class ExpandProviderTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="tv7-expand-provider-") as td:
             core_dir = Path(td)
             item = {
-                "item_id": "ST-A01-02-01",
+                "item_id": "SI-A01-02-01",
                 "title": "Protect rich expansion from default downgrade",
                 "tasks": ["Preserve detailed guidance on reruns"],
-                "repos": ["tv7-astro-site"],
-                "source_file": str(core_dir / "docs/roadmaps/tv7-astro-site-roadmap.md"),
+                "repos": ["tv7-site"],
+                "source_file": str(core_dir / "docs/roadmaps/tv7-site-roadmap.md"),
                 "source_line": 15,
-                "issues": {"tv7-astro-site": {"url": "https://example.test/issue/28"}},
+                "issues": {"tv7-site": {"url": "https://example.test/issue/28"}},
             }
             strong_payload = {
                 "context": (
@@ -357,7 +357,7 @@ class ExpandProviderTests(unittest.TestCase):
                 ],
             }
             strong_body, _changed = _upsert_expansion_block(
-                "## Orchestrator Work Item\n\n- Item ID: `ST-A01-02-01`\n",
+                "## Orchestrator Work Item\n\n- Item ID: `SI-A01-02-01`\n",
                 strong_payload,
             )
             state = {"work_items": [item]}
@@ -366,7 +366,7 @@ class ExpandProviderTests(unittest.TestCase):
                 return {
                     "number": 28,
                     "url": "https://example.test/issue/28",
-                    "title": "[ST-A01-02-01] Protect rich expansion from default downgrade",
+                    "title": "[SI-A01-02-01] Protect rich expansion from default downgrade",
                     "state": "OPEN",
                     "body": strong_body,
                 }
@@ -383,7 +383,7 @@ class ExpandProviderTests(unittest.TestCase):
                     strict_expand=False,
                     batch_id="E2E-ASTRO-001",
                     progress=False,
-                    repo_filters=["tv7-astro-site"],
+                    repo_filters=["tv7-site"],
                     roadmap_filters=[],
                     item_prefix_filters=[],
                     limit=1,

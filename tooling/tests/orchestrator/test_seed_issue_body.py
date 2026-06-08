@@ -23,10 +23,10 @@ class SeedIssueBodyTests(unittest.TestCase):
     def test_seed_body_snapshot_for_all_repos(self) -> None:
         repos = [
             "tv7-core",
-            "tv7-fastapi-backend",
-            "tv7-flutter-studio",
-            "tv7-astro-site",
-            "tv7-axum-engine",
+            "tv7-backend",
+            "tv7-studio",
+            "tv7-site",
+            "tv7-engine",
         ]
         for idx, repo in enumerate(repos, start=1):
             item = self._sample_item(f"CO-C01-03-0{idx}")

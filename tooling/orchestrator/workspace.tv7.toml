@@ -16,32 +16,52 @@ labels = ["conductor", "repo:tv7-conductor"]
 validation_commands = ["PYTHONPATH=tooling python3 -m unittest discover -s tooling/tests/orchestrator -p 'test_*.py'"]
 automation_level = "plan"
 
+<<<<<<< Updated upstream
 [repos.tv7-fastapi-backend]
 path = "tv7-fastapi-backend"
 roadmap_sources = ["../tv7-core/docs/roadmaps/tv7-fastapi-backend-roadmap.md"]
 labels = ["conductor", "repo:tv7-fastapi-backend"]
 validation_commands = ["make check"]
+=======
+[repos.tv7-backend]
+path = "tv7-backend"
+roadmap_sources = [
+  "../tv7-core/docs/roadmaps/tv7-backend-roadmap.md",
+  "../tv7-core/docs/roadmaps/tv7-backend-off-roadmap.md",
+]
+labels = ["conductor", "repo:tv7-backend"]
+validation_commands = ["make lint", "make type", "make test"]
+>>>>>>> Stashed changes
 automation_level = "plan"
 
-[repos.tv7-fastapi-backend.preview]
+[repos.tv7-backend.preview]
 command = "PORT=${CONDUCTOR_PREVIEW_PORT} make dev"
 default_port = 5000
 preview_port = 5001
 health_url = "http://localhost:${CONDUCTOR_PREVIEW_PORT}/health"
 
+<<<<<<< Updated upstream
 [repos.tv7-astro-site]
 path = "tv7-astro-site"
 roadmap_sources = ["../tv7-core/docs/roadmaps/tv7-astro-site-roadmap.md"]
 labels = ["conductor", "repo:tv7-astro-site"]
 validation_commands = ["npm run check"]
+=======
+[repos.tv7-site]
+path = "tv7-site"
+roadmap_sources = ["../tv7-core/docs/roadmaps/tv7-site-roadmap.md"]
+labels = ["conductor", "repo:tv7-site"]
+validation_commands = ["npm run build"]
+>>>>>>> Stashed changes
 automation_level = "plan"
 
-[repos.tv7-astro-site.preview]
+[repos.tv7-site.preview]
 command = "npm run dev -- --host 127.0.0.1 --port ${CONDUCTOR_PREVIEW_PORT}"
 default_port = 4321
 preview_port = 4322
 health_url = "http://localhost:${CONDUCTOR_PREVIEW_PORT}/"
 
+<<<<<<< Updated upstream
 [repos.tv7-axum-engine]
 path = "tv7-axum-engine"
 roadmap_sources = ["../tv7-core/docs/roadmaps/tv7-axum-engine-roadmap.md"]
@@ -54,4 +74,18 @@ path = "tv7-flutter-studio"
 roadmap_sources = ["../tv7-core/docs/roadmaps/tv7-flutter-studio-roadmap.md"]
 labels = ["conductor", "repo:tv7-flutter-studio"]
 validation_commands = ["flutter test"]
+=======
+[repos.tv7-engine]
+path = "tv7-engine"
+roadmap_sources = ["../tv7-core/docs/roadmaps/tv7-engine-roadmap.md"]
+labels = ["conductor", "repo:tv7-engine"]
+validation_commands = ["make check", "make test"]
+automation_level = "plan"
+
+[repos.tv7-studio]
+path = "tv7-studio"
+roadmap_sources = ["../tv7-core/docs/roadmaps/tv7-studio-roadmap.md"]
+labels = ["conductor", "repo:tv7-studio"]
+validation_commands = ["make check"]
+>>>>>>> Stashed changes
 automation_level = "plan"

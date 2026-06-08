@@ -20,14 +20,14 @@ class ExecuteHandoffTests(unittest.TestCase):
             state = {
                 "work_items": [
                     {
-                        "item_id": "ST-A01-02-01",
+                        "item_id": "SI-A01-02-01",
                         "title": "Retry stuck execution",
                         "tasks": ["Retry execute handoff"],
-                        "repos": ["tv7-astro-site"],
+                        "repos": ["tv7-site"],
                         "stage": "executing",
-                        "source_file": str(core_dir / "docs" / "roadmaps" / "tv7-astro-site-roadmap.md"),
+                        "source_file": str(core_dir / "docs" / "roadmaps" / "tv7-site-roadmap.md"),
                         "source_line": 15,
-                        "issues": {"tv7-astro-site": {"url": "https://github.com/TV7-Clip-Studio/tv7-astro-site/issues/28"}},
+                        "issues": {"tv7-site": {"url": "https://github.com/TV7-Clip-Studio/tv7-site/issues/28"}},
                     }
                 ]
             }
@@ -40,7 +40,7 @@ class ExecuteHandoffTests(unittest.TestCase):
                 policy_path="",
                 batch_id="E2E-ASTRO-001",
                 progress=False,
-                repo_filters=["tv7-astro-site"],
+                repo_filters=["tv7-site"],
                 roadmap_filters=[],
                 item_prefix_filters=[],
                 limit=1,
@@ -51,7 +51,7 @@ class ExecuteHandoffTests(unittest.TestCase):
             self.assertEqual((spawned, failed, skipped, planned), (0, 0, 0, 1))
             self.assertEqual((item_count, target_count), (1, 1))
             self.assertEqual(actions[0]["action"], "would_spawn")
-            self.assertIn("cmd=ao spawn tv7-astro-site 28", actions[0]["note"])
+            self.assertIn("cmd=ao spawn tv7-site 28", actions[0]["note"])
 
     def test_dry_run_uses_github_issue_number_from_url(self) -> None:
         with tempfile.TemporaryDirectory(prefix="tv7-execute-") as td:
@@ -61,16 +61,16 @@ class ExecuteHandoffTests(unittest.TestCase):
             state = {
                 "work_items": [
                     {
-                        "item_id": "ST-A01-02-01",
+                        "item_id": "SI-A01-02-01",
                         "title": "Bridge execution handoff",
                         "tasks": ["Spawn execution for repo targets"],
-                        "repos": ["tv7-astro-site"],
+                        "repos": ["tv7-site"],
                         "stage": "expanded",
-                        "source_file": str(core_dir / "docs" / "roadmaps" / "tv7-astro-site-roadmap.md"),
+                        "source_file": str(core_dir / "docs" / "roadmaps" / "tv7-site-roadmap.md"),
                         "source_line": 15,
                         "issues": {
-                            "tv7-astro-site": {
-                                "url": "https://github.com/TV7-Clip-Studio/tv7-astro-site/issues/28"
+                            "tv7-site": {
+                                "url": "https://github.com/TV7-Clip-Studio/tv7-site/issues/28"
                             }
                         },
                     }
@@ -85,7 +85,7 @@ class ExecuteHandoffTests(unittest.TestCase):
                 policy_path="",
                 batch_id="E2E-ASTRO-001",
                 progress=False,
-                repo_filters=["tv7-astro-site"],
+                repo_filters=["tv7-site"],
                 roadmap_filters=[],
                 item_prefix_filters=[],
                 limit=1,
@@ -96,7 +96,7 @@ class ExecuteHandoffTests(unittest.TestCase):
             self.assertEqual((spawned, failed, skipped, planned), (0, 0, 0, 1))
             self.assertEqual((item_count, target_count), (1, 1))
             self.assertEqual(actions[0]["action"], "would_spawn")
-            self.assertIn("cmd=ao spawn tv7-astro-site 28", actions[0]["note"])
+            self.assertIn("cmd=ao spawn tv7-site 28", actions[0]["note"])
 
     def test_dry_run_plans_ao_spawn_with_sandbox_metadata(self) -> None:
         with tempfile.TemporaryDirectory(prefix="tv7-execute-") as td:

@@ -59,6 +59,14 @@ Batch Code: A01
     **COMPLETED** | Architect Agent | 2026-04-27 13:05
     - **NOTE**: Prove plan/status/dry-run execution works without importing `tv7-core` modules or assuming TV7 paths.
     - **NOTE**: Added CLI portability coverage using a temporary non-TV7 fixture repo with explicit path roles and isolated state root.
+- [X] [CD-A01-04-05] Implement `resolve-conflicts` command in Conductor CLI and integrate with `git-dev.sh`.
+    **COMPLETED** | Architect Agent | 2026-06-07 20:13
+    - **NOTE**: Added `resolve-conflicts` subcommand under `cli.py` in `tv7-conductor`. It scans for unmerged files, runs `codex exec` to resolve them, and stages them if conflict markers are cleared. Updated `git-dev.sh` in `tv7-core` to invoke Conductor.
+- [X] [CD-A01-04-06] Add `describe-changes` command to Conductor CLI to display PR-like bulleted change summaries.
+    **COMPLETED** | Architect Agent | 2026-06-07 20:53
+    - **NOTE**: Added `describe-changes` subcommand under `cli.py` in `tv7-conductor`. It queries `gemini-2.5-flash` to generate a bulleted summary of current repository changes. Wired it to display context immediately in `git-dev.sh`.
+
+
 
 ## Phase 5: Isolated Human Test Environments
 - [X] [CD-A01-05-01] Add worktree-backed execution support for task changes.
