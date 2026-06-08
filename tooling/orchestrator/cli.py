@@ -5,6 +5,7 @@ import copy
 import importlib.util
 import json
 import os
+import re
 from pathlib import Path
 import shutil
 import subprocess
@@ -1984,7 +1985,6 @@ BODY:
 
 
 def cmd_resolve_pr_review(args: argparse.Namespace) -> int:
-    import re
     repo_path = Path(args.repo).expanduser()
     if not repo_path.is_absolute():
         repo_path = Path(args.workspace_dir).expanduser().resolve() / repo_path
