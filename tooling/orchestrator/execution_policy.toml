@@ -10,7 +10,7 @@ worktree = 1200
 container = 1800
 
 [repo_modes]
-tv7-axum-engine = "container"
+tv7-engine = "container"
 
 [classifiers]
 docs_keywords = [

@@ -2,12 +2,17 @@ from __future__ import annotations
 
 import argparse
 import copy
+from datetime import datetime, timezone
 import importlib.util
 import json
+import os
+import random
+import re
 from pathlib import Path
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 
 from .agent_profiles import list_profiles, resolve_profile
@@ -105,14 +110,14 @@ def _default_repo_for_roadmap(roadmap: Path) -> list[str]:
         return [mapped]
 
     name = roadmap.name
-    if "tv7-fastapi-backend" in name:
-        return ["tv7-fastapi-backend"]
-    if "tv7-flutter-studio" in name:
-        return ["tv7-flutter-studio"]
-    if "tv7-astro-site" in name:
-        return ["tv7-astro-site"]
-    if "tv7-axum-engine" in name:
-        return ["tv7-axum-engine"]
+    if "tv7-backend" in name:
+        return ["tv7-backend"]
+    if "tv7-studio" in name:
+        return ["tv7-studio"]
+    if "tv7-site" in name:
+        return ["tv7-site"]
+    if "tv7-engine" in name:
+        return ["tv7-engine"]
     return ["tv7-core"]
 
 
@@ -1660,6 +1665,1198 @@ def cmd_state_migration_check(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_suggest_branch(args: argparse.Namespace) -> int:
+    repo_path = Path(args.repo).expanduser()
+    if not repo_path.is_absolute():
+        repo_path = Path(args.workspace_dir).expanduser().resolve() / repo_path
+
+    if not repo_path.is_dir():
+        print(f"Error: Directory {repo_path} does not exist.")
+        return 1
+
+    # Get short status or diff
+    res = subprocess.run(
+        ["git", "status", "-s"],
+        cwd=str(repo_path),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    diff_content = res.stdout.strip()
+    if not diff_content:
+        # Fallback to status
+        res_status = subprocess.run(
+            ["git", "status"],
+            cwd=str(repo_path),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        diff_content = res_status.stdout.strip()
+
+    context = str(args.context or "").strip() or "No active ticket"
+
+    prompt = f"""You are a git assistant. Suggest 3 short, hyphenated git branch names (e.g. fix-auth-bug, feature-billing-ui, refactor-api-client) based on the following context and diff:
+
+Active roadmap context:
+{context}
+
+Git diff/status:
+{diff_content}
+
+Output ONLY the 3 suggested branch names, one per line. No comments, no formatting, no quotes, no markdown, and no explanation. Example:
+feature-auth-ui
+fix-rebase-bug
+refactor-db-migrations"""
+
+    res_gemini = subprocess.run(
+        ["gemini", "-m", "gemini-2.5-flash", "-p", "-"],
+        cwd=str(repo_path),
+        input=prompt,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    if res_gemini.returncode != 0:
+        print(f"Error calling Gemini CLI: {res_gemini.stderr.strip()}")
+        return res_gemini.returncode
+
+    # Strip Loaded cached credentials and print only the model's suggestions
+    output_lines = []
+    for line in res_gemini.stdout.splitlines():
+        line_strip = line.strip()
+        if line_strip == "Loaded cached credentials.":
+            continue
+        output_lines.append(line)
+
+    print("\n".join(output_lines).strip())
+    return 0
+
+
+def cmd_suggest_commit(args: argparse.Namespace) -> int:
+    repo_path = Path(args.repo).expanduser()
+    if not repo_path.is_absolute():
+        repo_path = Path(args.workspace_dir).expanduser().resolve() / repo_path
+
+    if not repo_path.is_dir():
+        print(f"Error: Directory {repo_path} does not exist.")
+        return 1
+
+    # Get diff
+    res = subprocess.run(
+        ["git", "diff", "HEAD"],
+        cwd=str(repo_path),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    diff_content = res.stdout.strip()
+    if not diff_content:
+        # Fallback to status
+        res_status = subprocess.run(
+            ["git", "status"],
+            cwd=str(repo_path),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        diff_content = res_status.stdout.strip()
+
+    prompt = f"""You are a git assistant. Generate a concise, single-line commit message in the imperative mood (e.g. "add database index", "fix auth layout alignment", "refactor test runner") describing the following git diff. Do not include any prefix or branch name in the message.
+
+Git diff:
+{diff_content}
+
+Output ONLY the raw commit message. No quotes, no markdown, and no explanation."""
+
+    res_gemini = subprocess.run(
+        ["gemini", "-m", "gemini-2.5-flash", "-p", "-"],
+        cwd=str(repo_path),
+        input=prompt,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    if res_gemini.returncode != 0:
+        print(f"Error calling Gemini CLI: {res_gemini.stderr.strip()}")
+        return res_gemini.returncode
+
+    # Strip Loaded cached credentials and print only the model's suggestions
+    output_lines = []
+    for line in res_gemini.stdout.splitlines():
+        line_strip = line.strip()
+        if line_strip == "Loaded cached credentials.":
+            continue
+        output_lines.append(line)
+
+    print("\n".join(output_lines).strip())
+    return 0
+
+
+def cmd_describe_changes(args: argparse.Namespace) -> int:
+    repo_path = Path(args.repo).expanduser()
+    if not repo_path.is_absolute():
+        repo_path = Path(args.workspace_dir).expanduser().resolve() / repo_path
+
+    if not repo_path.is_dir():
+        print(f"Error: Directory {repo_path} does not exist.")
+        return 1
+
+    # Get diff
+    res = subprocess.run(
+        ["git", "diff", "HEAD"],
+        cwd=str(repo_path),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    diff_content = res.stdout.strip()
+    if not diff_content:
+        # Fallback to status
+        res_status = subprocess.run(
+            ["git", "status"],
+            cwd=str(repo_path),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        diff_content = res_status.stdout.strip()
+
+    prompt = f"""You are a git assistant. Generate a brief, clear bulleted summary (like a PR description, maximum 3-5 bullet points) of the following git diff. Focus on high-level achievements, not line-by-line details.
+
+Git diff:
+{diff_content}
+
+Output ONLY the bulleted summary. Do not include introductory text, quotes, or markdown headers."""
+
+    res_gemini = subprocess.run(
+        ["gemini", "-m", "gemini-2.5-flash", "-p", "-"],
+        cwd=str(repo_path),
+        input=prompt,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    if res_gemini.returncode != 0:
+        print(f"Error calling Gemini CLI: {res_gemini.stderr.strip()}")
+        return res_gemini.returncode
+
+    # Strip Loaded cached credentials and print only the model's suggestions
+    output_lines = []
+    for line in res_gemini.stdout.splitlines():
+        line_strip = line.strip()
+        if line_strip == "Loaded cached credentials.":
+            continue
+        output_lines.append(line)
+
+    print("\n".join(output_lines).strip())
+    return 0
+
+
+def cmd_create_pr(args: argparse.Namespace) -> int:
+    repo_path = Path(args.repo).expanduser()
+    if not repo_path.is_absolute():
+        repo_path = Path(args.workspace_dir).expanduser().resolve() / repo_path
+
+    if not repo_path.is_dir():
+        print(f"Error: Directory {repo_path} does not exist.")
+        return 1
+
+    # 1. Determine current branch name
+    res_branch = subprocess.run(
+        ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+        cwd=str(repo_path),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    branch_name = res_branch.stdout.strip()
+    if not branch_name or branch_name == "main":
+        print("Error: Cannot create a Pull Request from 'main' branch.")
+        return 1
+
+    # 2. Get commit history relative to origin/main
+    res_log = subprocess.run(
+        ["git", "log", "origin/main..HEAD", "--oneline"],
+        cwd=str(repo_path),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    history = res_log.stdout.strip()
+    if not history:
+        # Fallback to status if no commits found relative to origin/main
+        res_status = subprocess.run(
+            ["git", "status", "-s"],
+            cwd=str(repo_path),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        history = res_status.stdout.strip()
+
+    print("Generating PR title and description using Gemini...")
+    prompt = f"""You are a git assistant. Generate a pull request title and description based on the following commit/status history.
+
+Commit history:
+{history}
+
+Your output must follow this format EXACTLY. Do not include markdown block wrappers or markdown wrapper formatting around the whole response.
+TITLE: [Brief imperative title, e.g. "feat-auth: Add login page layout"]
+BODY:
+- [Brief bullet point 1]
+- [Brief bullet point 2]
+"""
+
+    res_gemini = subprocess.run(
+        ["gemini", "-m", "gemini-2.5-flash", "-p", "-"],
+        cwd=str(repo_path),
+        input=prompt,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if res_gemini.returncode != 0:
+        print(f"Error calling Gemini CLI: {res_gemini.stderr.strip()}")
+        return res_gemini.returncode
+
+    # Parse gemini output
+    output = res_gemini.stdout.strip()
+    title = ""
+    body_lines = []
+    in_body = False
+    for line in output.splitlines():
+        line_strip = line.strip()
+        if line_strip == "Loaded cached credentials.":
+            continue
+        if line_strip.startswith("TITLE:"):
+            title = line_strip[len("TITLE:"):].strip().strip('"').strip("'")
+        elif line_strip.startswith("BODY:"):
+            in_body = True
+        elif in_body:
+            body_lines.append(line)
+
+    body = "\n".join(body_lines).strip()
+    if not title:
+        title = f"PR: {branch_name}"
+    if not body:
+        body = f"Automated Pull Request for branch {branch_name}."
+
+    print(f"\nCreating Pull Request:")
+    print(f"  Title: {title}")
+    print(f"  Body:\n{body}\n")
+
+    # 3. Create the PR using gh CLI
+    cmd = ["gh", "pr", "create", "--title", title, "--body", body]
+    res_pr = subprocess.run(
+        cmd,
+        cwd=str(repo_path),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if res_pr.returncode != 0:
+        # Check if PR already exists
+        if "already exists" in res_pr.stderr or "a pull request for branch" in res_pr.stderr:
+            print("A Pull Request for this branch already exists.")
+            # Retrieve existing PR url
+            res_view = subprocess.run(
+                ["gh", "pr", "view", "--json", "url"],
+                cwd=str(repo_path),
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if res_view.returncode == 0:
+                try:
+                    pr_info = json.loads(res_view.stdout)
+                    print(f"Existing PR: {pr_info.get('url')}")
+                    return 0
+                except:
+                    pass
+            return 0
+        print(f"Error creating PR: {res_pr.stderr.strip()}")
+        return res_pr.returncode
+
+    pr_url = res_pr.stdout.strip()
+    print(f"Success! Pull Request created: {pr_url}")
+    return 0
+
+
+def cmd_resolve_pr_review(args: argparse.Namespace) -> int:
+    repo_path = Path(args.repo).expanduser()
+    if not repo_path.is_absolute():
+        repo_path = Path(args.workspace_dir).expanduser().resolve() / repo_path
+
+    if not repo_path.is_dir():
+        print(f"Error: Directory {repo_path} does not exist.")
+        return 1
+
+    def artifact_path(name: str) -> Path:
+        path = repo_path / ".git" / name
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            return path
+        except OSError:
+            temp_dir = Path(tempfile.mkdtemp(prefix="tv7-conductor-pr-review-"))
+            return temp_dir / name
+
+    def display_artifact_path(path: Path) -> Path:
+        try:
+            return path.relative_to(repo_path)
+        except ValueError:
+            return path
+
+    def write_artifact(name: str, content: str) -> Path:
+        path = artifact_path(name)
+        path.write_text(content)
+        return display_artifact_path(path)
+
+    def extract_verdict_and_confidence(review_text: str) -> tuple[str, str]:
+        verdict = "UNKNOWN"
+        confidence = "N/A"
+
+        verdict_match = re.search(r"Final verdict:\s*(\w+)", review_text, re.IGNORECASE)
+        if not verdict_match:
+            verdict_match = re.search(r"FINAL_VERDICT:\s*(?:[^\w]+)?(\w+)", review_text, re.IGNORECASE)
+        if verdict_match:
+            verdict = verdict_match.group(1).upper()
+
+        conf_match = re.search(r"Confidence:\s*(\d+%)", review_text, re.IGNORECASE)
+        if not conf_match:
+            conf_match = re.search(r"FINAL_VERDICT:\s*\w+\s*\((\d+%)\)", review_text, re.IGNORECASE)
+        if conf_match:
+            confidence = conf_match.group(1)
+
+        return verdict, confidence
+
+    def collect_section_bullets(text: str, heading: str, limit: int = 3) -> list[str]:
+        bullets: list[str] = []
+        in_section = False
+        for line in text.splitlines():
+            stripped = line.strip()
+            if stripped.lower().startswith("### "):
+                in_section = heading.lower() in stripped.lower()
+                continue
+            if not in_section:
+                continue
+            if stripped.startswith(("- ", "* ")):
+                bullets.append(stripped[2:].strip())
+            elif stripped and not bullets:
+                bullets.append(stripped)
+            if len(bullets) >= limit:
+                break
+        return bullets
+
+    def print_review_summary(review_text: str, full_path: Path) -> tuple[str, str]:
+        verdict, confidence = extract_verdict_and_confidence(review_text)
+        print(f"\nDeepSeek review: {verdict} ({confidence})")
+        print(f"Full review saved to: {full_path}")
+
+        findings = collect_section_bullets(review_text, "Findings")
+        recommendations = collect_section_bullets(review_text, "Recommendations")
+        summary = collect_section_bullets(review_text, "Summary", limit=2)
+
+        lines = findings or recommendations or summary
+        if lines:
+            print("Highlights:")
+            for line in lines[:3]:
+                print(f"  - {line}")
+        else:
+            print("Highlights: no specific findings parsed from the review.")
+        return verdict, confidence
+
+    def print_gemini_summary(gem_text: str, files_to_modify: list[str], full_path: Path) -> None:
+        print(f"\nGemini light analysis saved to: {full_path}")
+        bullets = collect_section_bullets(gem_text, "Summary of Findings")
+        if bullets:
+            print("Gemini summary:")
+            for bullet in bullets[:3]:
+                print(f"  - {bullet}")
+        else:
+            print("Gemini summary: no concise findings parsed.")
+        if files_to_modify:
+            print(f"Target files: {', '.join(files_to_modify[:6])}")
+            if len(files_to_modify) > 6:
+                print(f"  ...and {len(files_to_modify) - 6} more")
+        else:
+            print("Target files: none")
+
+    def merge_pr_and_delete_branch(target_branch: str) -> int:
+        res_state = subprocess.run(
+            ["gh", "pr", "view", "--json", "mergeable,state"],
+            cwd=str(repo_path),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if res_state.returncode != 0:
+            print("Error checking PR mergeability. Please resolve on GitHub.")
+            return 1
+
+        try:
+            pr_state = json.loads(res_state.stdout)
+        except json.JSONDecodeError as e:
+            print(f"Error parsing PR mergeability status: {e}")
+            return 1
+
+        state = str(pr_state.get("state", "")).upper()
+        mergeable = str(pr_state.get("mergeable", "")).upper()
+        if state != "OPEN":
+            print(f"Cannot merge PR because its state is {state or 'UNKNOWN'}.")
+            return 1
+        if mergeable not in {"MERGEABLE", "TRUE"}:
+            print(f"Cannot merge PR because mergeability is {mergeable or 'UNKNOWN'}.")
+            print("Resolve conflicts and required checks on GitHub, then rerun this command.")
+            return 1
+
+        print("Merging Pull Request...")
+        res_merge = subprocess.run(
+            ["gh", "pr", "merge", "--merge", "--delete-branch"],
+            cwd=str(repo_path),
+            check=False,
+        )
+        if res_merge.returncode != 0:
+            print("Error merging PR. Please resolve on GitHub.")
+            return 1
+
+        print("PR merged and remote branch deleted successfully.")
+        print("Switching back to main and pulling updates...")
+        subprocess.run(["git", "checkout", "main"], cwd=str(repo_path), check=False)
+        subprocess.run(["git", "pull", "origin", "main"], cwd=str(repo_path), check=False)
+
+        if target_branch and target_branch != "main":
+            res_delete = subprocess.run(
+                ["git", "branch", "-D", target_branch],
+                cwd=str(repo_path),
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if res_delete.returncode != 0:
+                detail = (res_delete.stderr or res_delete.stdout or "").strip()
+                if detail:
+                    print(f"Error deleting local branch {target_branch}: {detail}")
+                else:
+                    print(f"Error deleting local branch {target_branch}.")
+                return res_delete.returncode
+            print(f"Local branch {target_branch} deleted.")
+        return 0
+
+    def codex_command(read_only: bool) -> list[str]:
+        cmd = ["codex", "exec", "--full-auto", "-c", "reasoning_effort=low"]
+        model = os.environ.get("TV7_CODEX_MODEL", "").strip()
+        if model:
+            cmd.extend(["-m", model])
+        if read_only:
+            cmd.extend(["-s", "read-only"])
+        cmd.extend(["-C", str(repo_path), "-"])
+        return cmd
+
+    def run_codex_quiet(prompt: str, *, log_name: str, read_only: bool, label: str) -> tuple[int, Path]:
+        log_path = artifact_path(log_name)
+        print(f"\n{label}...")
+        print(f"Full Codex log: {display_artifact_path(log_path)}")
+
+        with log_path.open("w") as log_file:
+            process = subprocess.Popen(
+                codex_command(read_only),
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1,
+            )
+            assert process.stdin is not None
+            assert process.stdout is not None
+            process.stdin.write(prompt)
+            process.stdin.close()
+
+            last_action = ""
+            for line in process.stdout:
+                log_file.write(line)
+                log_file.flush()
+                stripped = line.strip()
+                if not stripped:
+                    continue
+                lowered = stripped.lower()
+                if stripped.startswith("edit:") or stripped.startswith("write:"):
+                    last_action = "editing files"
+                elif stripped.startswith("read:"):
+                    last_action = "reading files"
+                elif "exec" in lowered or "/bin/" in stripped:
+                    last_action = "running commands"
+
+            process.wait()
+
+        if process.returncode == 0:
+            suffix = f" ({last_action})" if last_action else ""
+            print(f"{label} complete{suffix}.")
+        else:
+            print(f"{label} failed with exit code {process.returncode}.")
+            try:
+                lines = log_path.read_text().splitlines()
+                tail = [line for line in lines[-20:] if line.strip()]
+                if tail:
+                    print("Last log lines:")
+                    for line in tail[-8:]:
+                        print(f"  {line}")
+            except OSError:
+                pass
+        return process.returncode, log_path
+
+    def print_codex_plan_summary(plan_path: Path) -> None:
+        lines = []
+        try:
+            for raw in plan_path.read_text().splitlines():
+                line = raw.strip()
+                if not line:
+                    continue
+                if line in {"codex", "tokens used"}:
+                    continue
+                if line.startswith(("-", "*")):
+                    candidate = line.lstrip("-* ").strip()
+                    if candidate:
+                        lines.append(candidate)
+                elif line.lower().startswith(("files", "changes", "plan")):
+                    lines.append(line)
+                if len(lines) >= 6:
+                    break
+        except OSError:
+            lines = []
+
+        print(f"Codex technical plan saved to: {display_artifact_path(plan_path)}")
+        if lines:
+            print("Codex plan summary:")
+            for line in lines[:4]:
+                print(f"  - {line}")
+        else:
+            print("Codex plan summary: see saved log for details.")
+
+    def extract_codex_final_message(log_path: Path, *, limit: int = 8) -> list[str]:
+        try:
+            text = log_path.read_text()
+        except OSError:
+            return []
+
+        sections = re.split(r"(?m)^codex\s*$", text)
+        section = sections[-1] if sections else text
+        section = re.split(r"(?m)^tokens used\s*$", section)[0]
+        section = re.split(r"(?m)^diff --git ", section)[0]
+
+        lines: list[str] = []
+        for raw in section.splitlines():
+            line = raw.strip()
+            if not line:
+                continue
+            if line.startswith(("warning:", "OpenAI Codex", "--------", "workdir:", "model:", "provider:", "approval:", "sandbox:", "reasoning", "session id:", "user")):
+                continue
+            if line.startswith(("exec", "/bin/", "succeeded in", "failed in")):
+                continue
+            if line in {"codex"}:
+                continue
+            lines.append(line)
+            if len(lines) >= limit:
+                break
+        return lines
+
+    def print_codex_message(title: str, log_path: Path) -> None:
+        lines = extract_codex_final_message(log_path)
+        print(f"\n{title}:")
+        if not lines:
+            print(f"  See saved log: {display_artifact_path(log_path)}")
+            return
+        for line in lines:
+            print(f"  {line}")
+
+    def changed_files_from_status(status_output: str) -> list[str]:
+        files: list[str] = []
+        for line in status_output.splitlines():
+            if not line:
+                continue
+            status_part = line[:2]
+            file_part = line[3:].strip()
+            if " -> " in file_part:
+                file_part = file_part.split(" -> ", 1)[1].strip()
+            if status_part == "??" or any(ch in status_part for ch in "MADRC"):
+                files.append(file_part)
+        return files
+
+    def unmerged_files() -> list[str]:
+        res = subprocess.run(
+            ["git", "diff", "--name-only", "--diff-filter=U"],
+            cwd=str(repo_path),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        return [line.strip() for line in res.stdout.splitlines() if line.strip()]
+
+    def stage_pr_review_files(files: list[str]) -> bool:
+        unresolved = unmerged_files()
+        if unresolved:
+            print("Cannot stage review fixes while merge conflicts remain:")
+            for path in unresolved:
+                print(f"  - {path}")
+            return False
+
+        for f in files:
+            print(f"Staging changed file: {f}")
+            subprocess.run(
+                ["git", "add", "--", f],
+                cwd=str(repo_path),
+                check=False,
+            )
+        return True
+
+    def parse_github_timestamp(value: object) -> datetime | None:
+        raw = str(value or "").strip()
+        if not raw:
+            return None
+        normalized = raw[:-1] + "+00:00" if raw.endswith("Z") else raw
+        try:
+            parsed = datetime.fromisoformat(normalized)
+        except ValueError:
+            return None
+        if parsed.tzinfo is None:
+            return parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc)
+
+    def get_item_timestamp(item) -> datetime | None:
+        for key in ["submittedAt", "createdAt", "submitted_at", "created_at"]:
+            val = item.get(key)
+            if val:
+                parsed = parse_github_timestamp(val)
+                if parsed is not None:
+                    return parsed
+        return None
+
+    def next_poll_delay(attempt: int, remaining: float) -> float:
+        base_delay = min(30.0, 5.0 * (2 ** max(attempt - 1, 0)))
+        jitter = random.uniform(0.0, min(3.0, base_delay * 0.25))
+        return max(0.0, min(remaining, base_delay + jitter))
+
+    # 1. Fetch current open PR comments
+    print("Retrieving PR details from GitHub...")
+    res_pr = subprocess.run(
+        ["gh", "pr", "view", "--json", "number,url,comments,reviews"],
+        cwd=str(repo_path),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if res_pr.returncode != 0:
+        print("No open Pull Request found for this branch. Please create a PR first.")
+        return 1
+
+    try:
+        pr_data = json.loads(res_pr.stdout)
+    except Exception as e:
+        print(f"Error parsing PR JSON data: {e}")
+        return 1
+
+    pr_number = pr_data.get("number")
+    pr_url = pr_data.get("url")
+    print(f"Found active PR #{pr_number}: {pr_url}")
+
+    # Determine current branch name
+    res_branch = subprocess.run(
+        ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+        cwd=str(repo_path),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    branch_name = res_branch.stdout.strip()
+
+    # Loop for automatic review resolution
+    last_processed_timestamp: datetime | None = None
+    timeout = 600  # 10 minutes
+    max_resolution_cycles = 3
+    resolution_cycles = 0
+
+    while True:
+        # Polling for DeepSeek review comments
+        deepseek_review_text = ""
+        deepseek_review_time: datetime | None = None
+        start_time = time.time()
+        poll_attempt = 0
+
+        print("\nChecking for DeepSeek review comment on GitHub...")
+        while True:
+            # Fetch comments/reviews again
+            res_view = subprocess.run(
+                ["gh", "pr", "view", "--json", "comments,reviews"],
+                cwd=str(repo_path),
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if res_view.returncode == 0:
+                try:
+                    view_data = json.loads(res_view.stdout)
+                    items = []
+                    for r in view_data.get("reviews", []):
+                        items.append(r)
+                    for c in view_data.get("comments", []):
+                        items.append(c)
+
+                    # Sort items by timestamp descending to get the most recent first
+                    items.sort(
+                        key=lambda item: get_item_timestamp(item) or datetime.min.replace(tzinfo=timezone.utc),
+                        reverse=True,
+                    )
+
+                    # Search for DeepSeek bot reviews
+                    for item in items:
+                        body = str(item.get("body", ""))
+                        if "DeepSeek review" in body:
+                            timestamp = get_item_timestamp(item)
+                            # If we have a last_processed_timestamp, make sure this one is newer!
+                            if timestamp is not None and (
+                                last_processed_timestamp is None or timestamp > last_processed_timestamp
+                            ):
+                                deepseek_review_text = body
+                                deepseek_review_time = timestamp
+                                break
+                except Exception as e:
+                    print(f"Parsing error during poll: {e}")
+
+            if deepseek_review_text:
+                print("\nFound DeepSeek review comment!")
+                break
+
+            elapsed = time.time() - start_time
+            if elapsed >= timeout:
+                print(f"\nTimeout: DeepSeek review comment not found after {timeout} seconds.")
+                if last_processed_timestamp is not None:
+                    print("No new review posted after our push. You can rerun this command once the review is posted.")
+                return 1
+
+            poll_attempt += 1
+            delay = next_poll_delay(poll_attempt, timeout - elapsed)
+            print(
+                f"Waiting for DeepSeek review... ({int(elapsed)}s elapsed, next check in {delay:.1f}s)",
+                end="\r",
+                flush=True,
+            )
+            time.sleep(delay)
+
+        review_display_path = write_artifact(
+            f"deepseek-review-pr-{pr_number}.md",
+            deepseek_review_text,
+        )
+        verdict, confidence = print_review_summary(deepseek_review_text, review_display_path)
+
+        print("\nWhat would you like to do?")
+        print("  1) Review findings with Gemini")
+        print("  2) Merge Pull Request and delete branch")
+        print("  3) Exit (keep PR open)")
+        choice = input("Select an option [1-3, default: 3]: ").strip() or "3"
+
+        if choice == "3":
+            print("Exiting.")
+            return 0
+        if choice == "2":
+            return merge_pr_and_delete_branch(branch_name)
+        if choice != "1":
+            print("Invalid option. Exiting.")
+            return 1
+
+        # Light analysis / summary using Gemini
+        print("\nRunning Gemini light analysis...")
+        summary_prompt = f"""You are a code review assistant. Analyze the following DeepSeek review comment and produce a structured response.
+
+Your response MUST follow this exact format:
+
+### Summary of Findings
+<Provide a concise summary of the findings, maximum 3 bullet points, for the developer.>
+
+### Files to Modify
+<List the files in the repository that need to be modified or inspected to address the findings. Use the format:
+- filepath: brief description of required change
+If no files need modification, list:
+- none
+>
+
+### Additional Technical Context
+<Provide key technical context, constraints, or hints that will help an automated coder (Codex) resolve these findings successfully.>
+
+DeepSeek review comment:
+{deepseek_review_text}"""
+        res_gem = subprocess.run(
+            ["gemini", "-m", "gemini-2.5-flash", "-p", "-"],
+            cwd=str(repo_path),
+            input=summary_prompt,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        gem_text = ""
+        files_to_modify = []
+        if res_gem.returncode == 0:
+            gem_output = []
+            for line in res_gem.stdout.splitlines():
+                if line.strip() == "Loaded cached credentials.":
+                    continue
+                gem_output.append(line)
+            gem_text = "\n".join(gem_output).strip()
+
+            # Parse files to modify
+            in_files_section = False
+            for line in gem_output:
+                line_strip = line.strip()
+                if "### Files to Modify" in line:
+                    in_files_section = True
+                    continue
+                elif line_strip.startswith("###"):
+                    in_files_section = False
+
+                if in_files_section:
+                    if line_strip.startswith("- ") or line_strip.startswith("* "):
+                        path_part = line_strip[2:].split(":")[0].strip()
+                        path_part = path_part.strip("`'\"")
+                        if path_part and path_part.lower() != "none":
+                            files_to_modify.append(path_part)
+            gem_display_path = write_artifact(
+                f"gemini-review-analysis-pr-{pr_number}.md",
+                gem_text,
+            )
+            print_gemini_summary(gem_text, files_to_modify, gem_display_path)
+        else:
+            gem_display_path = write_artifact(
+                f"gemini-review-analysis-pr-{pr_number}.log",
+                (res_gem.stdout or "") + (res_gem.stderr or ""),
+            )
+            print(f"Gemini analysis failed. Output saved to: {gem_display_path}")
+
+        print(f"\nDeepSeek Review Verdict: {verdict} (Confidence: {confidence})")
+        print("What would you like to do next?")
+        print("  1) Run Codex technical plan only")
+        print("  2) Resolve findings using Codex")
+        print("  3) Merge Pull Request and delete branch")
+        print("  4) Exit (keep PR open)")
+        choice = input("Select an option [1-4, default: 4]: ").strip() or "4"
+
+        if choice == "4":
+            print("Exiting.")
+            return 0
+        if choice == "3":
+            return merge_pr_and_delete_branch(branch_name)
+        if choice not in {"1", "2"}:
+            print("Invalid option. Exiting.")
+            return 1
+
+        analysis_prompt = f"""Analyze the code review findings listed in the following DeepSeek review comment against the current repository state. Do NOT modify any files.
+
+For each finding, classify it as exactly one of:
+- valid: current code still has the issue and needs a change.
+- stale: review describes older code that is already fixed in the current checkout.
+- false_positive: review claim is incorrect; cite current code or command evidence.
+- needs_human: insufficient evidence to decide safely.
+
+Only list implementation changes for valid findings. Keep the response concise and technical.
+
+Required response format:
+### Valid Findings
+- <finding>: <evidence and intended change>
+
+### Stale Or False Positive Findings
+- <finding>: <why no change should be made>
+
+### Files To Modify
+- <path or none>: <reason>
+
+Gemini Analysis:
+{gem_text}
+
+DeepSeek review findings:
+{deepseek_review_text}"""
+
+        rc_plan, plan_path = run_codex_quiet(
+            analysis_prompt,
+            log_name=f"codex-plan-pr-{pr_number}.md",
+            read_only=True,
+            label="Running Codex technical plan",
+        )
+        print_codex_plan_summary(plan_path)
+        print_codex_message("Codex plan approach", plan_path)
+        if rc_plan != 0:
+            return rc_plan
+
+        if choice == "1":
+            return 0
+
+        if choice == "2":
+            # Formulate prompt for Codex to resolve findings
+            metadata_lines = []
+            if files_to_modify:
+                metadata_lines.append("Target files to inspect and modify:")
+                for f in files_to_modify:
+                    metadata_lines.append(f"  - {f}")
+                metadata_lines.append("")
+
+            metadata_text = "\n".join(metadata_lines)
+
+            prompt = f"""Resolve only the valid code review findings listed below. Before changing code, compare each DeepSeek finding against the current repository state and the Codex Technical Plan.
+
+Rules:
+- Implement only findings classified as valid in the plan.
+- Do not modify code for stale findings or false positives.
+- If all findings are stale or false positives, exit without modifying files and explain why.
+- If a finding concerns Codex CLI flags or model names, verify against `codex exec --help` or current environment behavior before changing code.
+- Ensure the code compiles and targeted tests pass.
+
+If you analyze the findings and determine that no code changes are necessary (e.g. because the issues are already resolved, or the findings are false positives/warnings that don't apply, or the PR is fully approved without issues), exit immediately without making any modifications.
+
+{metadata_text}Gemini Analysis Details:
+{gem_text}
+
+Codex Technical Plan:
+{plan_path.read_text() if plan_path.exists() else ""}
+
+DeepSeek review findings:
+{deepseek_review_text}"""
+
+            rc_resolve, log_path = run_codex_quiet(
+                prompt,
+                log_name=f"codex-resolve-pr-{pr_number}.log",
+                read_only=False,
+                label="Resolving findings with Codex",
+            )
+            if rc_resolve != 0:
+                return rc_resolve
+            print_codex_message("Codex resolution", log_path)
+
+            # Check if changes were made
+            res_status = subprocess.run(
+                ["git", "status", "--porcelain"],
+                cwd=str(repo_path),
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            modified_files = changed_files_from_status(res_status.stdout)
+
+            if not modified_files:
+                print("\nNo code changes were made by Codex.")
+
+                print("\nWould you like to merge this Pull Request and delete the branch?")
+                print("  1) Merge PR and delete branch")
+                print("  2) Keep PR open and exit")
+                choice_merge = input("Select an option [1-2, default: 2]: ").strip()
+                if choice_merge == "1":
+                    return merge_pr_and_delete_branch(branch_name)
+                else:
+                    return 0
+
+            # Staging resolved files
+            print("\nCodex completed successfully. Staging modified files...")
+            if not stage_pr_review_files(modified_files):
+                print("Review fixes were left unstaged. Resolve conflicts and rerun the PR review flow.")
+                return 1
+
+            res_verify = subprocess.run(
+                ["git", "diff", "--name-only"],
+                cwd=str(repo_path),
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            remaining = [line.strip() for line in res_verify.stdout.splitlines() if line.strip()]
+            if remaining:
+                print("Some changes are still unstaged after staging review fixes:")
+                for path in remaining:
+                    print(f"  - {path}")
+                print("Review the listed files, then rerun the PR review flow.")
+                return 1
+
+            # Commit and push changes
+            commit_msg = "chore: resolve DeepSeek review findings"
+            print(f"\nCreating commit: '{commit_msg}'")
+            res_commit = subprocess.run(
+                ["git", "commit", "-m", commit_msg],
+                cwd=str(repo_path),
+                check=False,
+            )
+            if res_commit.returncode != 0:
+                print("Error committing. Exiting.")
+                return res_commit.returncode
+
+            print("Pushing commits to remote to trigger a new DeepSeek review...")
+            push_env = {**os.environ, "TV7_ALLOW_PUSH": "1"}
+            res_push = subprocess.run(
+                ["git", "push"],
+                cwd=str(repo_path),
+                env=push_env,
+                check=False,
+            )
+            if res_push.returncode != 0:
+                print("Error pushing to remote. Exiting.")
+                return res_push.returncode
+
+            if deepseek_review_time is None:
+                print("Error: DeepSeek review timestamp was not available after processing.")
+                return 1
+
+            last_processed_timestamp = deepseek_review_time
+            resolution_cycles += 1
+            if resolution_cycles >= max_resolution_cycles:
+                print(
+                    f"\nReached maximum automatic review resolution cycles "
+                    f"({max_resolution_cycles}). Rerun this command to continue."
+                )
+                return 1
+            print("\nWaiting for the new DeepSeek review comment to be posted...")
+
+
+def cmd_resolve_conflicts(args: argparse.Namespace) -> int:
+    repo_path = Path(args.repo).expanduser()
+    if not repo_path.is_absolute():
+        repo_path = Path(args.workspace_dir).expanduser().resolve() / repo_path
+
+    if not repo_path.is_dir():
+        print(f"Error: Directory {repo_path} does not exist.")
+        return 1
+
+    # Scan for unmerged conflict files
+    res = subprocess.run(
+        ["git", "diff", "--name-only", "--diff-filter=U"],
+        cwd=str(repo_path),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    unmerged_files = [line.strip() for line in res.stdout.splitlines() if line.strip()]
+    if not unmerged_files:
+        print(f"No unmerged conflict files found in {repo_path}.")
+        return 0
+
+    print(f"Detected unmerged conflict files in {repo_path}:")
+    for f in unmerged_files:
+        print(f"  - {f}")
+
+    prompt_lines = [
+        "Resolve the merge conflicts in this repository. Focus on files with conflict markers.",
+        "Ensure all conflict markers are cleared, and verify code is syntactically correct.",
+        "",
+        "Unmerged conflict files to resolve:",
+    ]
+    for f in unmerged_files:
+        prompt_lines.append(f"- {f}")
+
+    prompt_text = "\n".join(prompt_lines)
+
+    log_path = repo_path / ".git" / "codex-resolve-conflicts.log"
+    log_file = None
+    try:
+        log_file = open(log_path, "w")
+        display_path = log_path.relative_to(repo_path)
+    except OSError:
+        temp_file = tempfile.NamedTemporaryFile(prefix="codex-resolve-conflicts-", suffix=".log", delete=False)
+        log_path = Path(temp_file.name)
+        log_file = open(log_path, "w")
+        display_path = log_path
+
+    print(f"\nLaunching Codex CLI on {repo_path} to resolve conflicts...")
+    print(f"Streaming logs to: {display_path}")
+    cmd = ["codex", "exec", "--full-auto", "-C", str(repo_path), "-"]
+
+    try:
+        p = subprocess.Popen(
+            cmd,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+        )
+        p.stdin.write(prompt_text)
+        p.stdin.close()
+
+        curr_exec_cmd = None
+        for line in p.stdout:
+            log_file.write(line)
+            log_file.flush()
+
+            line_strip = line.strip()
+            if not line_strip:
+                continue
+
+            if line_strip.startswith("/bin/zsh -lc '") or line_strip.startswith("/bin/bash -c '"):
+                parts = line_strip.split("'")
+                if len(parts) > 1:
+                    curr_exec_cmd = parts[1]
+                    print(f"  ➜ Running: {curr_exec_cmd}")
+            elif "succeeded in" in line_strip:
+                if curr_exec_cmd:
+                    print(f"    ✔ Succeeded ({line_strip.split()[-1]})")
+                    curr_exec_cmd = None
+            elif "failed in" in line_strip:
+                if curr_exec_cmd:
+                    print(f"    ✘ Failed ({line_strip.split()[-1]})")
+                    curr_exec_cmd = None
+            elif line_strip.startswith("edit:") or line_strip.startswith("write:") or line_strip.startswith("read:"):
+                print(f"  ➜ {line_strip}")
+            elif "tool call" in line_strip.lower() or "calling" in line_strip.lower():
+                print(f"  ➜ {line_strip}")
+
+        p.wait()
+    finally:
+        if log_file:
+            log_file.close()
+
+    if p.returncode != 0:
+        print(f"\nCodex execution failed with exit code {p.returncode}.")
+        print("Showing last 20 lines of logs:")
+        try:
+            log_lines = log_path.read_text().splitlines()
+            for line in log_lines[-20:]:
+                print(f"  {line}")
+        except Exception:
+            pass
+        return p.returncode
+
+    if p.returncode == 0:
+        print(f"\nCodex completed successfully. Log retained at: {display_path}")
+        print("Checking if conflicts are resolved...")
+        # Auto-stage files that no longer contain conflict markers
+        for f in unmerged_files:
+            file_path = repo_path / f
+            if file_path.is_file():
+                try:
+                    content = file_path.read_text()
+                    if "<<<<<<<" not in content and "=======" not in content and ">>>>>>>" not in content:
+                        print(f"Staging resolved file: {f}")
+                        subprocess.run(
+                            ["git", "add", f],
+                            cwd=str(repo_path),
+                            check=False,
+                        )
+                except Exception as e:
+                    print(f"Error reading/staging {f}: {e}")
+
+        res_verify = subprocess.run(
+            ["git", "diff", "--name-only", "--diff-filter=U"],
+            cwd=str(repo_path),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        remaining = [line.strip() for line in res_verify.stdout.splitlines() if line.strip()]
+        if remaining:
+            print("Warning: Some conflicts might still remain:")
+            for f in remaining:
+                print(f"  - {f}")
+            return 1
+        else:
+            print("Success! All conflicts resolved.")
+            return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Project Conductor CLI (single-run mode).")
     parser.add_argument("--source-dir", dest="core_dir", help="Path to source/governance repo root.")
@@ -1846,7 +3043,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--item-prefix",
         action="append",
         default=[],
-        help="Limit sync to item id prefix(es), e.g. ST-A01 or PY-B01-02.",
+        help="Limit sync to item id prefix(es), e.g. SI-A01 or BE-B01-02.",
     )
     p_tickets.add_argument(
         "--agent-profile",
@@ -2482,6 +3679,77 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_state_check.add_argument("--json", action="store_true", help="Emit JSON summary.")
     p_state_check.set_defaults(func=cmd_state_migration_check)
+
+    p_resolve = sub.add_parser(
+        "resolve-conflicts",
+        help="Scan for and automatically resolve merge conflicts in a repo.",
+    )
+    p_resolve.add_argument(
+        "--repo",
+        required=True,
+        help="Name or path of the repository to check.",
+    )
+    p_resolve.set_defaults(func=cmd_resolve_conflicts)
+
+    p_suggest_branch = sub.add_parser(
+        "suggest-branch",
+        help="Query Gemini to suggest branch names based on current changes and roadmap context.",
+    )
+    p_suggest_branch.add_argument(
+        "--repo",
+        required=True,
+        help="Name or path of the repository.",
+    )
+    p_suggest_branch.add_argument(
+        "--context",
+        default="No active ticket",
+        help="Optional roadmap ticket context.",
+    )
+    p_suggest_branch.set_defaults(func=cmd_suggest_branch)
+
+    p_suggest_commit = sub.add_parser(
+        "suggest-commit",
+        help="Query Gemini to suggest a commit message based on current changes.",
+    )
+    p_suggest_commit.add_argument(
+        "--repo",
+        required=True,
+        help="Name or path of the repository.",
+    )
+    p_suggest_commit.set_defaults(func=cmd_suggest_commit)
+
+    p_describe = sub.add_parser(
+        "describe-changes",
+        help="Query Gemini to generate a brief bulleted summary of pending changes.",
+    )
+    p_describe.add_argument(
+        "--repo",
+        required=True,
+        help="Name or path of the repository.",
+    )
+    p_describe.set_defaults(func=cmd_describe_changes)
+
+    p_create_pr = sub.add_parser(
+        "create-pr",
+        help="Generate PR title and description and create it on GitHub.",
+    )
+    p_create_pr.add_argument(
+        "--repo",
+        required=True,
+        help="Name or path of the repository.",
+    )
+    p_create_pr.set_defaults(func=cmd_create_pr)
+
+    p_resolve_pr_review = sub.add_parser(
+        "resolve-pr-review",
+        help="Poll for DeepSeek review comment and invoke Codex to automatically resolve findings.",
+    )
+    p_resolve_pr_review.add_argument(
+        "--repo",
+        required=True,
+        help="Name or path of the repository.",
+    )
+    p_resolve_pr_review.set_defaults(func=cmd_resolve_pr_review)
 
     return parser
 

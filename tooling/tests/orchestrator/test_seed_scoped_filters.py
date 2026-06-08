@@ -13,7 +13,7 @@ class SeedScopedFilterTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="tv7-seed-scope-") as td:
             core_dir = Path(td)
             core_roadmap = core_dir / "docs" / "roadmaps" / "core" / "project-conductor-roadmap.md"
-            backend_roadmap = core_dir / "docs" / "roadmaps" / "tv7-fastapi-backend-roadmap.md"
+            backend_roadmap = core_dir / "docs" / "roadmaps" / "tv7-backend-roadmap.md"
 
             state = {
                 "work_items": [
@@ -21,16 +21,16 @@ class SeedScopedFilterTests(unittest.TestCase):
                         "item_id": "CO-C01-03-01",
                         "title": "Scoped target",
                         "tasks": ["Scoped target"],
-                        "repos": ["tv7-core", "tv7-astro-site"],
+                        "repos": ["tv7-core", "tv7-site"],
                         "source_file": str(core_roadmap),
                         "source_line": 69,
                         "issues": {},
                     },
                     {
-                        "item_id": "PY-A01-02-01",
+                        "item_id": "BE-A01-02-01",
                         "title": "Out of scope",
                         "tasks": ["Out of scope"],
-                        "repos": ["tv7-fastapi-backend"],
+                        "repos": ["tv7-backend"],
                         "source_file": str(backend_roadmap),
                         "source_line": 10,
                         "issues": {},

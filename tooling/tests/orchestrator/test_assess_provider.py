@@ -35,15 +35,15 @@ class AssessProviderTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="tv7-assess-provider-") as td:
             core_dir = Path(td)
             item = {
-                "item_id": "ST-A01-02-01",
+                "item_id": "SI-A01-02-01",
                 "title": "Assess provider wording",
-                "source_file": "docs/roadmaps/tv7-astro-site-roadmap.md",
+                "source_file": "docs/roadmaps/tv7-site-roadmap.md",
                 "source_line": 15,
                 "tasks": ["One task"],
             }
             _assessment, pending_path, _elapsed = _assess_with_cli_queue(
                 core_dir=core_dir,
-                repo="tv7-astro-site",
+                repo="tv7-site",
                 item=item,
                 provider="gemini",
                 profile="gemini_pro_medium",
@@ -68,13 +68,13 @@ class AssessProviderTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="tv7-assess-provider-") as td:
             root = Path(td)
             core_dir = root / "tv7-core"
-            repo_dir = root / "tv7-astro-site"
+            repo_dir = root / "tv7-site"
             core_dir.mkdir(parents=True, exist_ok=True)
             repo_dir.mkdir(parents=True, exist_ok=True)
             item = {
-                "item_id": "ST-A01-02-01",
+                "item_id": "SI-A01-02-01",
                 "title": "Assess with gemini",
-                "source_file": "docs/roadmaps/tv7-astro-site-roadmap.md",
+                "source_file": "docs/roadmaps/tv7-site-roadmap.md",
                 "source_line": 15,
                 "tasks": ["One task"],
             }
@@ -103,7 +103,7 @@ class AssessProviderTests(unittest.TestCase):
             ):
                 assessment, _log, _elapsed = _assess_with_gemini(
                     core_dir=core_dir,
-                    repo="tv7-astro-site",
+                    repo="tv7-site",
                     item=item,
                     model="gemini-2.5-pro",
                 )

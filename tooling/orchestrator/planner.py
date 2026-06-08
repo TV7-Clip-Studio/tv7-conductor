@@ -28,14 +28,14 @@ def _infer_repos(title: str, tasks: list[str]) -> list[str]:
 
     full = f"{title}\n" + "\n".join(tasks)
     hint_map = {
-        "backend": "tv7-fastapi-backend",
-        "fastapi": "tv7-fastapi-backend",
-        "flutter": "tv7-flutter-studio",
-        "studio": "tv7-flutter-studio",
-        "engine": "tv7-axum-engine",
-        "axum": "tv7-axum-engine",
-        "astro": "tv7-astro-site",
-        "site": "tv7-astro-site",
+        "backend": "tv7-backend",
+        "fastapi": "tv7-backend",
+        "flutter": "tv7-studio",
+        "studio": "tv7-studio",
+        "engine": "tv7-engine",
+        "axum": "tv7-engine",
+        "astro": "tv7-site",
+        "site": "tv7-site",
         "core": "tv7-core",
     }
     out: list[str] = []

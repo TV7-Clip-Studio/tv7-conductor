@@ -13,22 +13,22 @@ validation_commands = ["PYTHONPATH=tooling python3 -m unittest discover -s tooli
 extra_labels = ["area:conductor"]
 owner_hints = ["Architect Agent"]
 
-[repos.tv7-fastapi-backend]
+[repos.tv7-backend]
 validation_commands = ["make lint", "make type", "make test"]
 extra_labels = ["area:backend"]
 owner_hints = ["Backend Agent"]
 
-[repos.tv7-flutter-studio]
+[repos.tv7-studio]
 validation_commands = ["make check"]
 extra_labels = ["area:studio"]
 owner_hints = ["Studio Agent"]
 
-[repos.tv7-astro-site]
+[repos.tv7-site]
 validation_commands = ["npm run build"]
 extra_labels = ["area:site"]
 owner_hints = ["Site Agent"]
 
-[repos.tv7-axum-engine]
+[repos.tv7-engine]
 validation_commands = ["make check", "make test"]
 extra_labels = ["area:engine"]
 owner_hints = ["Engine Agent"]
