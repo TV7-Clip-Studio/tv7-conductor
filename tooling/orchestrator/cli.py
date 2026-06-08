@@ -2134,8 +2134,10 @@ def cmd_resolve_pr_review(args: argparse.Namespace) -> int:
         return 0
 
     def codex_command(read_only: bool) -> list[str]:
-        model = os.environ.get("TV7_CODEX_MODEL", "").strip() or "gpt-5-codex"
-        cmd = ["codex", "exec", "--full-auto", "-m", model, "-c", "reasoning_effort=low"]
+        cmd = ["codex", "exec", "--full-auto", "-c", "reasoning_effort=low"]
+        model = os.environ.get("TV7_CODEX_MODEL", "").strip()
+        if model:
+            cmd.extend(["-m", model])
         if read_only:
             cmd.extend(["-s", "read-only"])
         cmd.extend(["-C", str(repo_path), "-"])
@@ -2535,7 +2537,25 @@ DeepSeek review comment:
             print("Invalid option. Exiting.")
             return 1
 
-        analysis_prompt = f"""Analyze the code review findings listed in the following DeepSeek review comment. Identify which files need to be modified and list the technical changes you plan to make. Keep your response very concise and technical. Do NOT modify any files.
+        analysis_prompt = f"""Analyze the code review findings listed in the following DeepSeek review comment against the current repository state. Do NOT modify any files.
+
+For each finding, classify it as exactly one of:
+- valid: current code still has the issue and needs a change.
+- stale: review describes older code that is already fixed in the current checkout.
+- false_positive: review claim is incorrect; cite current code or command evidence.
+- needs_human: insufficient evidence to decide safely.
+
+Only list implementation changes for valid findings. Keep the response concise and technical.
+
+Required response format:
+### Valid Findings
+- <finding>: <evidence and intended change>
+
+### Stale Or False Positive Findings
+- <finding>: <why no change should be made>
+
+### Files To Modify
+- <path or none>: <reason>
 
 Gemini Analysis:
 {gem_text}
@@ -2568,7 +2588,14 @@ DeepSeek review findings:
 
             metadata_text = "\n".join(metadata_lines)
 
-            prompt = f"""Resolve the code review findings listed in the following DeepSeek review comment. Read the current source files, identify the locations of the findings, implement safety checks or fixes to address them, and ensure the code compiles and tests pass.
+            prompt = f"""Resolve only the valid code review findings listed below. Before changing code, compare each DeepSeek finding against the current repository state and the Codex Technical Plan.
+
+Rules:
+- Implement only findings classified as valid in the plan.
+- Do not modify code for stale findings or false positives.
+- If all findings are stale or false positives, exit without modifying files and explain why.
+- If a finding concerns Codex CLI flags or model names, verify against `codex exec --help` or current environment behavior before changing code.
+- Ensure the code compiles and targeted tests pass.
 
 If you analyze the findings and determine that no code changes are necessary (e.g. because the issues are already resolved, or the findings are false positives/warnings that don't apply, or the PR is fully approved without issues), exit immediately without making any modifications.
 

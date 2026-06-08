@@ -278,9 +278,10 @@ class ResolveConflictsTests(unittest.TestCase):
     @patch("subprocess.run")
     @patch("subprocess.Popen")
     @patch("builtins.input")
-    def test_resolve_pr_review_resolve_choice(self, mock_input: MagicMock, mock_popen: MagicMock, mock_run: MagicMock) -> None:
+    def test_resolve_pr_review_uses_codex_default_model_when_env_unset(self, mock_input: MagicMock, mock_popen: MagicMock, mock_run: MagicMock) -> None:
         with patch("pathlib.Path.is_dir", return_value=True), \
-             patch("builtins.open", unittest.mock.mock_open()):
+             patch("builtins.open", unittest.mock.mock_open()), \
+             patch.dict("os.environ", {}, clear=True):
             mock_pr_view = MagicMock(returncode=0, stdout='{"number": 42, "url": "https://github.com/TV7-Clip-Studio/tv7-core/pull/42"}')
             mock_branch = MagicMock(returncode=0, stdout='feat-test')
             mock_poll = MagicMock(returncode=0, stdout='{"reviews": [], "comments": [{"body": "DeepSeek review FINAL_VERDICT: APPROVED (95%)", "createdAt": "2026-06-08T00:52:49Z"}]}')
@@ -321,8 +322,58 @@ class ResolveConflictsTests(unittest.TestCase):
             self.assertEqual(rc, 0)
             for popen_call in mock_popen.call_args_list:
                 command = popen_call[0][0]
-                self.assertIn("gpt-5-codex", command)
+                self.assertNotIn("-m", command)
                 self.assertNotIn("gpt-5.5", command)
+                self.assertNotIn("gpt-5-codex", command)
+
+    @patch("subprocess.run")
+    @patch("subprocess.Popen")
+    @patch("builtins.input")
+    def test_resolve_pr_review_uses_env_codex_model(self, mock_input: MagicMock, mock_popen: MagicMock, mock_run: MagicMock) -> None:
+        with patch("pathlib.Path.is_dir", return_value=True), \
+             patch("builtins.open", unittest.mock.mock_open()), \
+             patch.dict("os.environ", {"TV7_CODEX_MODEL": "gpt-test-model"}, clear=True):
+            mock_pr_view = MagicMock(returncode=0, stdout='{"number": 42, "url": "https://github.com/TV7-Clip-Studio/tv7-core/pull/42"}')
+            mock_branch = MagicMock(returncode=0, stdout='feat-test')
+            mock_poll = MagicMock(returncode=0, stdout='{"reviews": [], "comments": [{"body": "DeepSeek review FINAL_VERDICT: APPROVED (95%)", "createdAt": "2026-06-08T00:52:49Z"}]}')
+            mock_gemini = MagicMock(
+                returncode=0,
+                stdout="""Loaded cached credentials.
+### Summary of Findings
+- Fix this
+
+### Files to Modify
+- src/main.py: fix syntax error
+
+### Additional Technical Context
+- Ensure proper imports
+"""
+            )
+
+            mock_input.side_effect = ["1", "2", "2"]
+
+            mock_process = MagicMock()
+            mock_process.returncode = 0
+            mock_process.stdout = ["succeeded in 0ms\n"]
+            mock_popen.return_value = mock_process
+
+            mock_status = MagicMock(returncode=0, stdout='')
+
+            mock_run.side_effect = [
+                mock_pr_view,
+                mock_branch,
+                mock_poll,
+                mock_gemini,
+                mock_status,
+            ]
+
+            rc = cli.main(["resolve-pr-review", "--repo", "/dummy/repo"])
+            self.assertEqual(rc, 0)
+            for popen_call in mock_popen.call_args_list:
+                command = popen_call[0][0]
+                self.assertIn("-m", command)
+                self.assertIn("gpt-test-model", command)
+                self.assertNotIn("gpt-5-codex", command)
 
     @patch("subprocess.run")
     @patch("subprocess.Popen")
