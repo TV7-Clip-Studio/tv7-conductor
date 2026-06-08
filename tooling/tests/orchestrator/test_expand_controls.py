@@ -91,14 +91,14 @@ class ExpandControlsTests(unittest.TestCase):
             state = {
                 "work_items": [
                     {
-                        "item_id": "ST-A01-02-01",
+                        "item_id": "SI-A01-02-01",
                         "title": "Preserve stage while expanding",
                         "tasks": ["Preserve executing stage"],
-                        "repos": ["tv7-astro-site"],
+                        "repos": ["tv7-site"],
                         "stage": "executing",
-                        "source_file": str(core_dir / "docs/roadmaps/tv7-astro-site-roadmap.md"),
+                        "source_file": str(core_dir / "docs/roadmaps/tv7-site-roadmap.md"),
                         "source_line": 15,
-                        "issues": {"tv7-astro-site": {"url": "https://example.test/issue/28"}},
+                        "issues": {"tv7-site": {"url": "https://example.test/issue/28"}},
                     }
                 ]
             }
@@ -107,9 +107,9 @@ class ExpandControlsTests(unittest.TestCase):
                 return {
                     "number": 28,
                     "url": "https://example.test/issue/28",
-                    "title": "[ST-A01-02-01] Preserve stage while expanding",
+                    "title": "[SI-A01-02-01] Preserve stage while expanding",
                     "state": "OPEN",
-                    "body": "## Orchestrator Work Item\n\n- Item ID: `ST-A01-02-01`\n",
+                    "body": "## Orchestrator Work Item\n\n- Item ID: `SI-A01-02-01`\n",
                 }
 
             with (
@@ -126,7 +126,7 @@ class ExpandControlsTests(unittest.TestCase):
                     strict_expand=False,
                     batch_id="E2E-ASTRO-001",
                     progress=False,
-                    repo_filters=["tv7-astro-site"],
+                    repo_filters=["tv7-site"],
                     roadmap_filters=[],
                     item_prefix_filters=[],
                     limit=1,

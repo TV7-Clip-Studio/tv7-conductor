@@ -22,9 +22,9 @@ class ExecutionPolicyTests(unittest.TestCase):
         item = {
             "title": "Refactor engine execution service",
             "tasks": ["Update Rust API and tests"],
-            "source_file": "docs/roadmaps/tv7-axum-engine-roadmap.md",
+            "source_file": "docs/roadmaps/tv7-engine-roadmap.md",
         }
-        mode = policy.sandbox_mode_for(item=item, repo="tv7-axum-engine")
+        mode = policy.sandbox_mode_for(item=item, repo="tv7-engine")
         self.assertEqual(mode, "container")
         self.assertGreaterEqual(policy.timeout_for_mode(mode), 30)
 

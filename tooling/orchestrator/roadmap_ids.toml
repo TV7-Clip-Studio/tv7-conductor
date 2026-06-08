@@ -4,19 +4,19 @@ batch = "A01"
 [repos]
 tv7-core = "CO"
 tv7-conductor = "CD"
-tv7-fastapi-backend = "PY"
-tv7-flutter-studio = "FL"
-tv7-astro-site = "ST"
-tv7-axum-engine = "AX"
+tv7-backend = "BE"
+tv7-studio = "ST"
+tv7-site = "SI"
+tv7-engine = "EN"
 
 [roadmaps]
 "tv7-core-roadmap.md" = { repo = "tv7-core", batch = "A01" }
 "agent-orchestration-roadmap.md" = { repo = "tv7-core", batch = "B01" }
-"tv7-fastapi-backend-roadmap.md" = { repo = "tv7-fastapi-backend", batch = "A01" }
-"tv7-fastapi-backend-off-roadmap.md" = { repo = "tv7-fastapi-backend", batch = "B01" }
-"tv7-flutter-studio-roadmap.md" = { repo = "tv7-flutter-studio", batch = "A01" }
-"tv7-astro-site-roadmap.md" = { repo = "tv7-astro-site", batch = "A01" }
-"tv7-axum-engine-roadmap.md" = { repo = "tv7-axum-engine", batch = "A01" }
+"tv7-backend-roadmap.md" = { repo = "tv7-backend", batch = "A01" }
+"tv7-backend-off-roadmap.md" = { repo = "tv7-backend", batch = "B01" }
+"tv7-studio-roadmap.md" = { repo = "tv7-studio", batch = "A01" }
+"tv7-site-roadmap.md" = { repo = "tv7-site", batch = "A01" }
+"tv7-engine-roadmap.md" = { repo = "tv7-engine", batch = "A01" }
 "roadmap.md" = { repo = "tv7-core", batch = "M01" }
 "project-conductor-roadmap.md" = { repo = "tv7-core", batch = "C01" }
 "tv7-conductor-roadmap.md" = { repo = "tv7-conductor", batch = "A01" }
