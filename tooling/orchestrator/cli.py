@@ -2129,7 +2129,20 @@ def cmd_resolve_pr_review(args: argparse.Namespace) -> int:
         subprocess.run(["git", "pull", "origin", "main"], cwd=str(repo_path), check=False)
 
         if target_branch and target_branch != "main":
-            subprocess.run(["git", "branch", "-D", target_branch], cwd=str(repo_path), check=False)
+            res_delete = subprocess.run(
+                ["git", "branch", "-D", target_branch],
+                cwd=str(repo_path),
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if res_delete.returncode != 0:
+                detail = (res_delete.stderr or res_delete.stdout or "").strip()
+                if detail:
+                    print(f"Error deleting local branch {target_branch}: {detail}")
+                else:
+                    print(f"Error deleting local branch {target_branch}.")
+                return res_delete.returncode
             print(f"Local branch {target_branch} deleted.")
         return 0
 

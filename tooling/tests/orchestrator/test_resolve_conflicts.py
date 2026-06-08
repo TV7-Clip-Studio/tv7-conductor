@@ -255,6 +255,49 @@ class ResolveConflictsTests(unittest.TestCase):
 
     @patch("subprocess.run")
     @patch("builtins.input", return_value="2")
+    def test_resolve_pr_review_reports_local_branch_delete_failure(
+        self,
+        mock_input: MagicMock,
+        mock_run: MagicMock,
+    ) -> None:
+        with patch("pathlib.Path.is_dir", return_value=True):
+            mock_pr_view = MagicMock(returncode=0, stdout='{"number": 42, "url": "https://github.com/TV7-Clip-Studio/tv7-core/pull/42"}')
+            mock_branch = MagicMock(returncode=0, stdout='feat-test')
+            mock_poll = MagicMock(returncode=0, stdout='{"reviews": [], "comments": [{"body": "DeepSeek review FINAL_VERDICT: APPROVED (95%)", "createdAt": "2026-06-08T00:52:49Z"}]}')
+            mock_mergeable = MagicMock(returncode=0, stdout='{"mergeable": "MERGEABLE", "state": "OPEN"}')
+            mock_merge = MagicMock(returncode=0)
+            mock_checkout = MagicMock(returncode=0)
+            mock_pull = MagicMock(returncode=0)
+            mock_delete = MagicMock(returncode=1, stderr="branch not found", stdout="")
+
+            mock_run.side_effect = [
+                mock_pr_view,
+                mock_branch,
+                mock_poll,
+                mock_mergeable,
+                mock_merge,
+                mock_checkout,
+                mock_pull,
+                mock_delete,
+            ]
+
+            with patch("sys.stdout", new_callable=StringIO) as mock_stdout:
+                rc = cli.main(["resolve-pr-review", "--repo", "/dummy/repo"])
+
+            self.assertEqual(rc, 1)
+            self.assertIn("Error deleting local branch feat-test: branch not found", mock_stdout.getvalue())
+            self.assertEqual(
+                mock_run.call_args_list[-1].kwargs,
+                {
+                    "cwd": "/dummy/repo",
+                    "capture_output": True,
+                    "text": True,
+                    "check": False,
+                },
+            )
+
+    @patch("subprocess.run")
+    @patch("builtins.input", return_value="2")
     def test_resolve_pr_review_blocks_unmergeable_pr(self, mock_input: MagicMock, mock_run: MagicMock) -> None:
         with patch("pathlib.Path.is_dir", return_value=True):
             mock_pr_view = MagicMock(returncode=0, stdout='{"number": 42, "url": "https://github.com/TV7-Clip-Studio/tv7-core/pull/42"}')
