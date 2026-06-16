@@ -15,6 +15,8 @@ import sys
 import tempfile
 import time
 
+from .gemini_utils import _gemini_capacity_error, _gemini_command
+
 COLOR_SUPPORT = sys.stdout.isatty() and not os.environ.get("NO_COLOR")
 C_GREEN = "\033[0;32m"
 C_RED = "\033[0;31m"
@@ -44,14 +46,6 @@ def colorize_markdown(text: str) -> str:
     return text
 
 
-def _gemini_capacity_error(output: str) -> bool:
-    lowered = output.lower()
-    return any(
-        marker in lowered
-        for marker in ["capacity", "exhausted", "quota", "429", "rate limit", "too many requests"]
-    )
-
-
 def _extract_json_object_from_text(text: str) -> dict[str, object]:
     decoder = json.JSONDecoder()
     for idx, char in enumerate(text):
@@ -64,10 +58,6 @@ def _extract_json_object_from_text(text: str) -> dict[str, object]:
         if isinstance(value, dict):
             return value
     raise ValueError("no JSON object found")
-
-
-def _gemini_command(model: str) -> list[str]:
-    return ["gemini", "-m", model, "-p", "-", "-o", "json"]
 
 
 def _run_gemini_model(prompt: str, cwd: str, model: str) -> tuple[subprocess.CompletedProcess, float]:
