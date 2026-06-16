@@ -227,6 +227,14 @@ def _extract_json_object_from_text(text: str) -> dict[str, Any]:
     raise ValueError("response does not contain a valid JSON object")
 
 
+def _gemini_capacity_error(output: str) -> bool:
+    lowered = output.lower()
+    return any(
+        marker in lowered
+        for marker in ["capacity", "exhausted", "quota", "429", "rate limit", "too many requests"]
+    )
+
+
 def _run_gemini_json_prompt(
     *,
     core_dir: Path,
@@ -265,6 +273,21 @@ def _run_gemini_json_prompt(
             timeout=timeout_sec,
             cwd=repo_path,
         )
+        model_to_check = model or "gemini-2.5-flash"
+        if result.returncode != 0 and model_to_check == "gemini-2.5-flash":
+            err_msg = (result.stderr or result.stdout or "").strip()
+            if _gemini_capacity_error(err_msg):
+                fallback_model = "gemini-2.5-pro"
+                fallback_cmd = ["gemini", "--prompt", prompt, "--output-format", "json", "--approval-mode", "yolo", "--model", fallback_model]
+                _emit(progress_cb, f"[gemini] capacity limit reached for {model_to_check}. Retrying with {fallback_model}...")
+                result = subprocess.run(
+                    fallback_cmd,
+                    text=True,
+                    capture_output=True,
+                    check=False,
+                    timeout=timeout_sec,
+                    cwd=repo_path,
+                )
     except subprocess.TimeoutExpired as exc:
         elapsed = time.monotonic() - started
         log_payload = {
@@ -301,7 +324,23 @@ def _run_gemini_json_prompt(
         raise RuntimeError(f"gemini run returned empty response for {repo} (log: {log_path})")
 
     payload = _extract_json_object_from_text(response_text)
-    _emit(progress_cb, f"[gemini] done repo={repo} task={log_suffix} elapsed={elapsed:.1f}s")
+
+    stats = response_envelope.get("stats", {})
+    models = stats.get("models", {})
+    metrics_str = ""
+    if models:
+        parts = []
+        for model_name, model_data in models.items():
+            tokens = model_data.get("tokens", {})
+            total = tokens.get("total", 0)
+            cached = tokens.get("cached", 0)
+            token_str = f"{total:,}"
+            if cached > 0:
+                token_str += f" ({cached:,} cached)"
+            parts.append(f"{model_name}:{token_str}t")
+        metrics_str = f" [{', '.join(parts)}]"
+
+    _emit(progress_cb, f"[gemini] done repo={repo} task={log_suffix} elapsed={elapsed:.1f}s{metrics_str}")
     return payload, str(log_path), elapsed
 
 

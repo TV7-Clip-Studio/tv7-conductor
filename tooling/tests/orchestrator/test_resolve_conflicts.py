@@ -19,6 +19,40 @@ class ResolveConflictsTests(unittest.TestCase):
         self.patcher_batch_id.stop()
 
     @patch("subprocess.run")
+    def test_run_gemini_cli_unwraps_json_envelope(self, mock_run: MagicMock) -> None:
+        mock_run.return_value = MagicMock(
+            returncode=0,
+            stdout=(
+                'Loaded cached credentials.\n'
+                '{"response": "feature-one\\nfeature-two\\n", '
+                '"stats": {"models": {"gemini-2.5-flash": {"tokens": {"total": 12, "cached": 4}}}}}'
+            ),
+            stderr="",
+        )
+
+        with patch("sys.stderr", new=StringIO()):
+            result = cli.run_gemini_cli("prompt", "/tmp")
+
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(result.stdout, "feature-one\nfeature-two\n")
+        self.assertEqual(mock_run.call_args_list[0][0][0], ["gemini", "-m", "gemini-2.5-flash", "-p", "-", "-o", "json"])
+
+    @patch("subprocess.run")
+    def test_run_gemini_cli_falls_back_on_capacity_error(self, mock_run: MagicMock) -> None:
+        mock_run.side_effect = [
+            MagicMock(returncode=1, stdout="", stderr="429 capacity exhausted"),
+            MagicMock(returncode=0, stdout='{"response": "fallback-ok"}', stderr=""),
+        ]
+
+        with patch("sys.stderr", new=StringIO()):
+            result = cli.run_gemini_cli("prompt", "/tmp")
+
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(result.stdout, "fallback-ok")
+        self.assertEqual(mock_run.call_args_list[0][0][0], ["gemini", "-m", "gemini-2.5-flash", "-p", "-", "-o", "json"])
+        self.assertEqual(mock_run.call_args_list[1][0][0], ["gemini", "-m", "gemini-2.5-pro", "-p", "-", "-o", "json"])
+
+    @patch("subprocess.run")
     def test_resolve_conflicts_no_unmerged_files(self, mock_run: MagicMock) -> None:
         # Simulate directory check passing
         with patch("pathlib.Path.is_dir", return_value=True):
@@ -102,7 +136,7 @@ class ResolveConflictsTests(unittest.TestCase):
 
             # Check gemini call args
             gemini_call = mock_run.call_args_list[1]
-            self.assertEqual(gemini_call[0][0], ["gemini", "-m", "gemini-2.5-flash", "-p", "-"])
+            self.assertEqual(gemini_call[0][0], ["gemini", "-m", "gemini-2.5-flash", "-p", "-", "-o", "json"])
             self.assertIn("ticket details", gemini_call[1]["input"])
             self.assertIn("src/main.py", gemini_call[1]["input"])
 
@@ -130,7 +164,7 @@ class ResolveConflictsTests(unittest.TestCase):
 
             # Check gemini call args
             gemini_call = mock_run.call_args_list[1]
-            self.assertEqual(gemini_call[0][0], ["gemini", "-m", "gemini-2.5-flash", "-p", "-"])
+            self.assertEqual(gemini_call[0][0], ["gemini", "-m", "gemini-2.5-flash", "-p", "-", "-o", "json"])
             self.assertIn("some diff output", gemini_call[1]["input"])
 
     @patch("subprocess.run")
@@ -157,7 +191,7 @@ class ResolveConflictsTests(unittest.TestCase):
 
             # Check gemini call args
             gemini_call = mock_run.call_args_list[1]
-            self.assertEqual(gemini_call[0][0], ["gemini", "-m", "gemini-2.5-flash", "-p", "-"])
+            self.assertEqual(gemini_call[0][0], ["gemini", "-m", "gemini-2.5-flash", "-p", "-", "-o", "json"])
             self.assertIn("some diff output", gemini_call[1]["input"])
             self.assertIn("Generate a brief, clear bulleted summary", gemini_call[1]["input"])
 
@@ -268,7 +302,7 @@ class ResolveConflictsTests(unittest.TestCase):
             mock_merge = MagicMock(returncode=0)
             mock_checkout = MagicMock(returncode=0)
             mock_pull = MagicMock(returncode=0)
-            mock_delete = MagicMock(returncode=1, stderr="branch not found", stdout="")
+            mock_delete = MagicMock(returncode=1, stderr="permission denied", stdout="")
 
             mock_run.side_effect = [
                 mock_pr_view,
@@ -285,7 +319,7 @@ class ResolveConflictsTests(unittest.TestCase):
                 rc = cli.main(["resolve-pr-review", "--repo", "/dummy/repo"])
 
             self.assertEqual(rc, 1)
-            self.assertIn("Error deleting local branch feat-test: branch not found", mock_stdout.getvalue())
+            self.assertIn("Error deleting local branch feat-test: permission denied", mock_stdout.getvalue())
             self.assertEqual(
                 mock_run.call_args_list[-1].kwargs,
                 {
@@ -295,6 +329,40 @@ class ResolveConflictsTests(unittest.TestCase):
                     "check": False,
                 },
             )
+
+    @patch("subprocess.run")
+    @patch("builtins.input", return_value="2")
+    def test_resolve_pr_review_reports_local_branch_delete_not_found(
+        self,
+        mock_input: MagicMock,
+        mock_run: MagicMock,
+    ) -> None:
+        with patch("pathlib.Path.is_dir", return_value=True):
+            mock_pr_view = MagicMock(returncode=0, stdout='{"number": 42, "url": "https://github.com/TV7-Clip-Studio/tv7-core/pull/42"}')
+            mock_branch = MagicMock(returncode=0, stdout='feat-test')
+            mock_poll = MagicMock(returncode=0, stdout='{"reviews": [], "comments": [{"body": "DeepSeek review FINAL_VERDICT: APPROVED (95%)", "createdAt": "2026-06-08T00:52:49Z"}]}')
+            mock_mergeable = MagicMock(returncode=0, stdout='{"mergeable": "MERGEABLE", "state": "OPEN"}')
+            mock_merge = MagicMock(returncode=0)
+            mock_checkout = MagicMock(returncode=0)
+            mock_pull = MagicMock(returncode=0)
+            mock_delete = MagicMock(returncode=1, stderr="error: branch 'feat-test' not found.", stdout="")
+
+            mock_run.side_effect = [
+                mock_pr_view,
+                mock_branch,
+                mock_poll,
+                mock_mergeable,
+                mock_merge,
+                mock_checkout,
+                mock_pull,
+                mock_delete,
+            ]
+
+            with patch("sys.stdout", new_callable=StringIO) as mock_stdout:
+                rc = cli.main(["resolve-pr-review", "--repo", "/dummy/repo"])
+
+            self.assertEqual(rc, 0)
+            self.assertIn("Local branch feat-test not found (already deleted)", mock_stdout.getvalue())
 
     @patch("subprocess.run")
     @patch("builtins.input", return_value="2")
