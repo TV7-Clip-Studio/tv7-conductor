@@ -23,7 +23,7 @@ CONDUCTOR_WORKTREE_PATH ?=
 CONDUCTOR_LEGACY_STATE_ROOT ?= ../tv7-core/docs/.conductor
 CONDUCTOR_ACTIVE_STATE_ROOT ?= docs/.conductor
 
-.PHONY: venv install-dev install-web conductor-init conductor-doctor conductor-status conductor-plan conductor-run conductor-test conductor-prepare-worktree conductor-launch-preview conductor-validate-worktree conductor-local-review conductor-external-review conductor-review conductor-state-migration-check
+.PHONY: venv install-dev install-web precommit-context conductor-init conductor-doctor conductor-status conductor-plan conductor-run conductor-test conductor-prepare-worktree conductor-launch-preview conductor-validate-worktree conductor-local-review conductor-external-review conductor-review conductor-state-migration-check
 
 venv:
 	@$(PYTHON_FALLBACK) -m venv "$(VENV_DIR)"
@@ -52,6 +52,11 @@ conductor-run:
 
 conductor-test:
 	@PYTHONPATH=tooling "$(PYTHON)" -m unittest discover -s tooling/tests/orchestrator -p 'test_*.py'
+
+precommit-context:
+	@"$(PYTHON)" -m py_compile tooling/conductor.py tooling/conductor_run.py tooling/orchestrator/*.py
+	@$(MAKE) conductor-test
+	@git diff --check
 
 conductor-prepare-worktree:
 	@if [ -z "$(CONDUCTOR_REPO)" ] || [ -z "$(CONDUCTOR_ITEM_ID)" ]; then \

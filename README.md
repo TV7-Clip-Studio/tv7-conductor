@@ -20,6 +20,15 @@ make conductor-status
 
 See `docs/bootstrap.md` for fresh-machine setup and optional web dashboard dependencies.
 
+## Development Checks
+Run the local precommit context before committing conductor changes:
+
+```bash
+make precommit-context
+```
+
+It compiles conductor Python entry points/modules, runs the orchestrator unit suite, and checks the diff for whitespace errors.
+
 ## Runtime State
 Conductor state and reports are stored in `docs/.conductor` in this repo.
 

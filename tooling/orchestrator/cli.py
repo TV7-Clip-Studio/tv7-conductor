@@ -15,6 +15,118 @@ import sys
 import tempfile
 import time
 
+COLOR_SUPPORT = sys.stdout.isatty() and not os.environ.get("NO_COLOR")
+C_GREEN = "\033[0;32m"
+C_RED = "\033[0;31m"
+C_YELLOW = "\033[0;33m"
+C_CYAN = "\033[0;36m"
+C_MAGENTA = "\033[0;35m"
+C_BOLD = "\033[1m"
+C_RESET = "\033[0m"
+
+def color(text: str, code: str) -> str:
+    if COLOR_SUPPORT:
+        return f"{code}{text}{C_RESET}"
+    return text
+
+
+def colorize_markdown(text: str) -> str:
+    if not COLOR_SUPPORT:
+        return text
+
+    text = re.sub(r"\*\*(.*?)\*\*", lambda m: f"{C_BOLD}{C_GREEN}{m.group(1)}{C_RESET}", text)
+    text = re.sub(r"`(.*?)`", lambda m: f"{C_CYAN}{m.group(1)}{C_RESET}", text)
+
+    def colorize_bullet(m):
+        return f"{m.group(1)}{C_GREEN}{m.group(2)}{C_RESET} "
+
+    text = re.sub(r"^(\s*)([\*\-])\s+", colorize_bullet, text, flags=re.MULTILINE)
+    return text
+
+
+def _gemini_capacity_error(output: str) -> bool:
+    lowered = output.lower()
+    return any(
+        marker in lowered
+        for marker in ["capacity", "exhausted", "quota", "429", "rate limit", "too many requests"]
+    )
+
+
+def _extract_json_object_from_text(text: str) -> dict[str, object]:
+    decoder = json.JSONDecoder()
+    for idx, char in enumerate(text):
+        if char != "{":
+            continue
+        try:
+            value, _ = decoder.raw_decode(text[idx:])
+        except json.JSONDecodeError:
+            continue
+        if isinstance(value, dict):
+            return value
+    raise ValueError("no JSON object found")
+
+
+def _gemini_command(model: str) -> list[str]:
+    return ["gemini", "-m", model, "-p", "-", "-o", "json"]
+
+
+def _run_gemini_model(prompt: str, cwd: str, model: str) -> tuple[subprocess.CompletedProcess, float]:
+    start_time = time.time()
+    result = subprocess.run(
+        _gemini_command(model),
+        cwd=cwd,
+        input=prompt,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return result, time.time() - start_time
+
+
+def _unwrap_gemini_stdout(result: subprocess.CompletedProcess, elapsed: float) -> None:
+    if result.returncode != 0:
+        return
+    try:
+        data = _extract_json_object_from_text(result.stdout)
+    except ValueError:
+        return
+
+    response_text = data.get("response")
+    if isinstance(response_text, str):
+        result.stdout = response_text
+
+    stats = data.get("stats", {})
+    models = stats.get("models", {}) if isinstance(stats, dict) else {}
+    if not isinstance(models, dict) or not models:
+        return
+
+    parts = []
+    for model_name, model_data in models.items():
+        tokens = model_data.get("tokens", {}) if isinstance(model_data, dict) else {}
+        total = tokens.get("total", 0) if isinstance(tokens, dict) else 0
+        cached = tokens.get("cached", 0) if isinstance(tokens, dict) else 0
+        token_str = f"{total:,}"
+        if cached:
+            token_str += f" ({cached:,} cached)"
+        parts.append(f"model: {color(str(model_name), C_CYAN)}, tokens: {color(token_str, C_YELLOW)}")
+    parts.append(f"time: {color(f'{elapsed:.1f}s', C_CYAN)}")
+    print(color(f"  [gemini metrics: {', '.join(parts)}]", C_RESET), file=sys.stderr)
+
+
+def run_gemini_cli(prompt: str, cwd: str) -> subprocess.CompletedProcess:
+    model = os.environ.get("TV7_GEMINI_MODEL", "gemini-2.5-flash").strip()
+    result, elapsed = _run_gemini_model(prompt, cwd, model)
+
+    if result.returncode != 0 and model == "gemini-2.5-flash":
+        err_msg = (result.stderr or result.stdout or "").strip()
+        if _gemini_capacity_error(err_msg):
+            fallback_model = "gemini-2.5-pro"
+            print(color(f"  ⚠ Capacity limit reached for {model}. Retrying with {fallback_model}...", C_YELLOW), file=sys.stderr)
+            result, elapsed = _run_gemini_model(prompt, cwd, fallback_model)
+
+    _unwrap_gemini_stdout(result, elapsed)
+    return result
+
 from .agent_profiles import list_profiles, resolve_profile
 from .automation_policy import automation_violations, load_workspace_config_optional
 from .execution_bridge import execute_repo_handoffs
@@ -1696,7 +1808,7 @@ def cmd_suggest_branch(args: argparse.Namespace) -> int:
 
     context = str(args.context or "").strip() or "No active ticket"
 
-    prompt = f"""You are a git assistant. Suggest 3 short, hyphenated git branch names (e.g. fix-auth-bug, feature-billing-ui, refactor-api-client) based on the following context and diff:
+    prompt = f"""You are a git assistant. Suggest 3 short, hyphenated git branch names based on the following context and diff:
 
 Active roadmap context:
 {context}
@@ -1704,19 +1816,14 @@ Active roadmap context:
 Git diff/status:
 {diff_content}
 
-Output ONLY the 3 suggested branch names, one per line. No comments, no formatting, no quotes, no markdown, and no explanation. Example:
-feature-auth-ui
-fix-rebase-bug
-refactor-db-migrations"""
+CRITICAL INSTRUCTION:
+Look at the "Active roadmap context" above and check if there is a roadmap ticket ID/code (e.g. CO-M01-02-03, ST-A01-02-05, CO-01-20, etc.).
+If you find a ticket ID, you MUST start each suggested branch name with the ticket ID prefix without brackets, converted to lowercase, with underscores replaced by hyphens (e.g. co-m01-02-03-descriptive-name or co-01-20-descriptive-name).
+If no ticket ID is present, use normal prefix keywords like 'feat-', 'fix-', or 'refactor-'.
 
-    res_gemini = subprocess.run(
-        ["gemini", "-m", "gemini-2.5-flash", "-p", "-"],
-        cwd=str(repo_path),
-        input=prompt,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+Output ONLY the 3 suggested branch names, one per line. No comments, no formatting, no quotes, no markdown, and no explanation."""
+
+    res_gemini = run_gemini_cli(prompt, str(repo_path))
 
     if res_gemini.returncode != 0:
         print(f"Error calling Gemini CLI: {res_gemini.stderr.strip()}")
@@ -1770,14 +1877,7 @@ Git diff:
 
 Output ONLY the raw commit message. No quotes, no markdown, and no explanation."""
 
-    res_gemini = subprocess.run(
-        ["gemini", "-m", "gemini-2.5-flash", "-p", "-"],
-        cwd=str(repo_path),
-        input=prompt,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    res_gemini = run_gemini_cli(prompt, str(repo_path))
 
     if res_gemini.returncode != 0:
         print(f"Error calling Gemini CLI: {res_gemini.stderr.strip()}")
@@ -1831,14 +1931,7 @@ Git diff:
 
 Output ONLY the bulleted summary. Do not include introductory text, quotes, or markdown headers."""
 
-    res_gemini = subprocess.run(
-        ["gemini", "-m", "gemini-2.5-flash", "-p", "-"],
-        cwd=str(repo_path),
-        input=prompt,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    res_gemini = run_gemini_cli(prompt, str(repo_path))
 
     if res_gemini.returncode != 0:
         print(f"Error calling Gemini CLI: {res_gemini.stderr.strip()}")
@@ -1852,7 +1945,7 @@ Output ONLY the bulleted summary. Do not include introductory text, quotes, or m
             continue
         output_lines.append(line)
 
-    print("\n".join(output_lines).strip())
+    print(colorize_markdown("\n".join(output_lines).strip()))
     return 0
 
 
@@ -1911,14 +2004,7 @@ BODY:
 - [Brief bullet point 2]
 """
 
-    res_gemini = subprocess.run(
-        ["gemini", "-m", "gemini-2.5-flash", "-p", "-"],
-        cwd=str(repo_path),
-        input=prompt,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    res_gemini = run_gemini_cli(prompt, str(repo_path))
     if res_gemini.returncode != 0:
         print(f"Error calling Gemini CLI: {res_gemini.stderr.strip()}")
         return res_gemini.returncode
@@ -2051,10 +2137,21 @@ def cmd_resolve_pr_review(args: argparse.Namespace) -> int:
                 break
         return bullets
 
+    def colored_verdict(v: str) -> str:
+        v_upper = v.upper()
+        if "APPROVED" in v_upper:
+            return color(v, C_GREEN)
+        elif "REJECTED" in v_upper:
+            return color(v, C_RED)
+        return color(v, C_YELLOW)
+
     def print_review_summary(review_text: str, full_path: Path) -> tuple[str, str]:
         verdict, confidence = extract_verdict_and_confidence(review_text)
-        print(f"\nDeepSeek review: {verdict} ({confidence})")
-        print(f"Full review saved to: {full_path}")
+        confidence_str = color(confidence, C_CYAN) if confidence else ""
+        verdict_str = colored_verdict(verdict)
+        suffix = f" ({confidence_str})" if confidence_str else ""
+        print(f"\nDeepSeek review: {verdict_str}{suffix}")
+        print(f"Full review saved to: {color(display_artifact_path(full_path), C_MAGENTA)}")
 
         findings = collect_section_bullets(review_text, "Findings")
         recommendations = collect_section_bullets(review_text, "Recommendations")
@@ -2062,24 +2159,25 @@ def cmd_resolve_pr_review(args: argparse.Namespace) -> int:
 
         lines = findings or recommendations or summary
         if lines:
-            print("Highlights:")
+            print(color("Highlights:", C_BOLD))
             for line in lines[:3]:
-                print(f"  - {line}")
+                print(f"  {color('-', C_CYAN)} {line}")
         else:
             print("Highlights: no specific findings parsed from the review.")
         return verdict, confidence
 
     def print_gemini_summary(gem_text: str, files_to_modify: list[str], full_path: Path) -> None:
-        print(f"\nGemini light analysis saved to: {full_path}")
+        print(f"\nGemini light analysis saved to: {color(display_artifact_path(full_path), C_MAGENTA)}")
         bullets = collect_section_bullets(gem_text, "Summary of Findings")
         if bullets:
-            print("Gemini summary:")
+            print(color("Gemini summary:", C_BOLD))
             for bullet in bullets[:3]:
-                print(f"  - {bullet}")
+                print(f"  {color('-', C_CYAN)} {bullet}")
         else:
             print("Gemini summary: no concise findings parsed.")
         if files_to_modify:
-            print(f"Target files: {', '.join(files_to_modify[:6])}")
+            colored_files = [color(f, C_CYAN) for f in files_to_modify[:6]]
+            print(f"Target files: {', '.join(colored_files)}")
             if len(files_to_modify) > 6:
                 print(f"  ...and {len(files_to_modify) - 6} more")
         else:
@@ -2094,39 +2192,65 @@ def cmd_resolve_pr_review(args: argparse.Namespace) -> int:
             check=False,
         )
         if res_state.returncode != 0:
-            print("Error checking PR mergeability. Please resolve on GitHub.")
+            print(color("Error checking PR mergeability. Please resolve on GitHub.", C_RED))
             return 1
 
         try:
             pr_state = json.loads(res_state.stdout)
         except json.JSONDecodeError as e:
-            print(f"Error parsing PR mergeability status: {e}")
+            print(color(f"Error parsing PR mergeability status: {e}", C_RED))
             return 1
 
         state = str(pr_state.get("state", "")).upper()
         mergeable = str(pr_state.get("mergeable", "")).upper()
         if state != "OPEN":
-            print(f"Cannot merge PR because its state is {state or 'UNKNOWN'}.")
+            print(color(f"Cannot merge PR because its state is {state or 'UNKNOWN'}.", C_RED))
             return 1
         if mergeable not in {"MERGEABLE", "TRUE"}:
-            print(f"Cannot merge PR because mergeability is {mergeable or 'UNKNOWN'}.")
+            print(color(f"Cannot merge PR because mergeability is {mergeable or 'UNKNOWN'}.", C_RED))
             print("Resolve conflicts and required checks on GitHub, then rerun this command.")
             return 1
 
-        print("Merging Pull Request...")
+        print(color("Merging Pull Request...", C_CYAN))
         res_merge = subprocess.run(
             ["gh", "pr", "merge", "--merge", "--delete-branch"],
             cwd=str(repo_path),
             check=False,
         )
         if res_merge.returncode != 0:
-            print("Error merging PR. Please resolve on GitHub.")
+            print(color("Error merging PR. Please resolve on GitHub.", C_RED))
             return 1
 
-        print("PR merged and remote branch deleted successfully.")
-        print("Switching back to main and pulling updates...")
-        subprocess.run(["git", "checkout", "main"], cwd=str(repo_path), check=False)
-        subprocess.run(["git", "pull", "origin", "main"], cwd=str(repo_path), check=False)
+        print(color("PR merged and remote branch deleted successfully.", C_GREEN))
+        print(color("Switching back to main and pulling updates...", C_CYAN))
+
+        res_checkout = subprocess.run(
+            ["git", "checkout", "main"],
+            cwd=str(repo_path),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if res_checkout.returncode != 0:
+            print(color(f"Error checking out main: {(res_checkout.stderr or res_checkout.stdout or '').strip()}", C_RED))
+            return res_checkout.returncode
+        print(f"  {color('✔', C_GREEN)} Checked out branch main.")
+
+        res_pull = subprocess.run(
+            ["git", "pull", "origin", "main"],
+            cwd=str(repo_path),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if res_pull.returncode != 0:
+            print(color("  ⚠ Warning: Failed to pull main updates automatically. Reconcile divergent branches manually.", C_YELLOW))
+            detail = (res_pull.stderr or res_pull.stdout or "").strip()
+            if detail:
+                lines = [line.strip() for line in detail.splitlines() if line.strip()]
+                print(f"    Detail: {'; '.join(lines[:3])}")
+        else:
+            print(f"  {color('✔', C_GREEN)} Pulled latest updates for main.")
 
         if target_branch and target_branch != "main":
             res_delete = subprocess.run(
@@ -2138,12 +2262,13 @@ def cmd_resolve_pr_review(args: argparse.Namespace) -> int:
             )
             if res_delete.returncode != 0:
                 detail = (res_delete.stderr or res_delete.stdout or "").strip()
-                if detail:
-                    print(f"Error deleting local branch {target_branch}: {detail}")
+                if "not found" in detail.lower():
+                    print(f"  {color('✔', C_GREEN)} Local branch {color(target_branch, C_CYAN)} not found (already deleted).")
                 else:
-                    print(f"Error deleting local branch {target_branch}.")
-                return res_delete.returncode
-            print(f"Local branch {target_branch} deleted.")
+                    print(color(f"Error deleting local branch {target_branch}: {detail}", C_RED))
+                    return res_delete.returncode
+            else:
+                print(f"  {color('✔', C_GREEN)} Local branch {color(target_branch, C_CYAN)} deleted.")
         return 0
 
     def codex_command(read_only: bool) -> list[str]:
@@ -2158,9 +2283,10 @@ def cmd_resolve_pr_review(args: argparse.Namespace) -> int:
 
     def run_codex_quiet(prompt: str, *, log_name: str, read_only: bool, label: str) -> tuple[int, Path]:
         log_path = artifact_path(log_name)
-        print(f"\n{label}...")
-        print(f"Full Codex log: {display_artifact_path(log_path)}")
+        print(f"\n{color(label + '...', C_CYAN)}")
+        print(f"Full Codex log: {color(display_artifact_path(log_path), C_MAGENTA)}")
 
+        start_time = time.time()
         with log_path.open("w") as log_file:
             process = subprocess.Popen(
                 codex_command(read_only),
@@ -2191,12 +2317,41 @@ def cmd_resolve_pr_review(args: argparse.Namespace) -> int:
                     last_action = "running commands"
 
             process.wait()
+        elapsed_time = time.time() - start_time
+
+        # Parse log file for metrics
+        tokens_used = None
+        model_used = None
+        reasoning_effort = None
+        try:
+            log_content = log_path.read_text()
+            model_match = re.search(r"(?m)^model:\s*(.*)$", log_content)
+            if model_match:
+                model_used = model_match.group(1).strip()
+            reasoning_match = re.search(r"(?m)^reasoning effort:\s*(.*)$", log_content)
+            if reasoning_match:
+                reasoning_effort = reasoning_match.group(1).strip()
+            tokens_match = re.search(r"tokens used\s*\n\s*([0-9,]+)", log_content)
+            if tokens_match:
+                tokens_used = tokens_match.group(1).strip()
+        except OSError:
+            pass
+
+        metrics = []
+        if model_used:
+            metrics.append(f"model: {color(model_used, C_CYAN)}")
+        if reasoning_effort:
+            metrics.append(f"reasoning: {color(reasoning_effort, C_CYAN)}")
+        if tokens_used:
+            metrics.append(f"tokens: {color(tokens_used, C_YELLOW)}")
+        metrics.append(f"time: {color(f'{elapsed_time:.1f}s', C_CYAN)}")
+        metrics_str = f" [{', '.join(metrics)}]"
 
         if process.returncode == 0:
             suffix = f" ({last_action})" if last_action else ""
-            print(f"{label} complete{suffix}.")
+            print(f"{color(label + ' complete', C_GREEN)}{suffix}{metrics_str}.")
         else:
-            print(f"{label} failed with exit code {process.returncode}.")
+            print(f"{color(label + ' failed', C_RED)} with exit code {process.returncode}{metrics_str}.")
             try:
                 lines = log_path.read_text().splitlines()
                 tail = [line for line in lines[-20:] if line.strip()]
@@ -2228,11 +2383,11 @@ def cmd_resolve_pr_review(args: argparse.Namespace) -> int:
         except OSError:
             lines = []
 
-        print(f"Codex technical plan saved to: {display_artifact_path(plan_path)}")
+        print(f"Codex technical plan saved to: {color(display_artifact_path(plan_path), C_MAGENTA)}")
         if lines:
-            print("Codex plan summary:")
+            print(color("Codex plan summary:", C_BOLD))
             for line in lines[:4]:
-                print(f"  - {line}")
+                print(f"  {color('-', C_CYAN)} {line}")
         else:
             print("Codex plan summary: see saved log for details.")
 
@@ -2265,12 +2420,17 @@ def cmd_resolve_pr_review(args: argparse.Namespace) -> int:
 
     def print_codex_message(title: str, log_path: Path) -> None:
         lines = extract_codex_final_message(log_path)
-        print(f"\n{title}:")
+        print(f"\n{color(title + ':', C_BOLD)}")
         if not lines:
-            print(f"  See saved log: {display_artifact_path(log_path)}")
+            print(f"  See saved log: {color(display_artifact_path(log_path), C_MAGENTA)}")
             return
         for line in lines:
-            print(f"  {line}")
+            if line.startswith("###"):
+                print(f"  {color(line, C_YELLOW + C_BOLD)}")
+            elif line.startswith(("-", "*")):
+                print(f"  {color('-', C_CYAN)} {line[1:].strip()}")
+            else:
+                print(f"  {line}")
 
     def changed_files_from_status(status_output: str) -> list[str]:
         files: list[str] = []
@@ -2340,7 +2500,7 @@ def cmd_resolve_pr_review(args: argparse.Namespace) -> int:
         return max(0.0, min(remaining, base_delay + jitter))
 
     # 1. Fetch current open PR comments
-    print("Retrieving PR details from GitHub...")
+    print(color("Retrieving PR details from GitHub...", C_CYAN))
     res_pr = subprocess.run(
         ["gh", "pr", "view", "--json", "number,url,comments,reviews"],
         cwd=str(repo_path),
@@ -2349,18 +2509,18 @@ def cmd_resolve_pr_review(args: argparse.Namespace) -> int:
         check=False,
     )
     if res_pr.returncode != 0:
-        print("No open Pull Request found for this branch. Please create a PR first.")
+        print(color("No open Pull Request found for this branch. Please create a PR first.", C_RED))
         return 1
 
     try:
         pr_data = json.loads(res_pr.stdout)
     except Exception as e:
-        print(f"Error parsing PR JSON data: {e}")
+        print(color(f"Error parsing PR JSON data: {e}", C_RED))
         return 1
 
     pr_number = pr_data.get("number")
     pr_url = pr_data.get("url")
-    print(f"Found active PR #{pr_number}: {pr_url}")
+    print(f"Found active PR #{pr_number}: {color(pr_url, C_CYAN)}")
 
     # Determine current branch name
     res_branch = subprocess.run(
@@ -2385,7 +2545,7 @@ def cmd_resolve_pr_review(args: argparse.Namespace) -> int:
         start_time = time.time()
         poll_attempt = 0
 
-        print("\nChecking for DeepSeek review comment on GitHub...")
+        print(f"\n{color('Checking for DeepSeek review comment on GitHub...', C_CYAN)}")
         while True:
             # Fetch comments/reviews again
             res_view = subprocess.run(
@@ -2423,15 +2583,15 @@ def cmd_resolve_pr_review(args: argparse.Namespace) -> int:
                                 deepseek_review_time = timestamp
                                 break
                 except Exception as e:
-                    print(f"Parsing error during poll: {e}")
+                    print(color(f"Parsing error during poll: {e}", C_RED))
 
             if deepseek_review_text:
-                print("\nFound DeepSeek review comment!")
+                print(f"\n{color('Found DeepSeek review comment!', C_GREEN)}")
                 break
 
             elapsed = time.time() - start_time
             if elapsed >= timeout:
-                print(f"\nTimeout: DeepSeek review comment not found after {timeout} seconds.")
+                print(color(f"\nTimeout: DeepSeek review comment not found after {timeout} seconds.", C_RED))
                 if last_processed_timestamp is not None:
                     print("No new review posted after our push. You can rerun this command once the review is posted.")
                 return 1
@@ -2451,10 +2611,10 @@ def cmd_resolve_pr_review(args: argparse.Namespace) -> int:
         )
         verdict, confidence = print_review_summary(deepseek_review_text, review_display_path)
 
-        print("\nWhat would you like to do?")
-        print("  1) Review findings with Gemini")
-        print("  2) Merge Pull Request and delete branch")
-        print("  3) Exit (keep PR open)")
+        print(f"\n{color('What would you like to do?', C_BOLD)}")
+        print(f"  {color('1)', C_GREEN)} Review findings with Gemini")
+        print(f"  {color('2)', C_GREEN)} Merge Pull Request and delete branch")
+        print(f"  {color('3)', C_GREEN)} Exit (keep PR open)")
         choice = input("Select an option [1-3, default: 3]: ").strip() or "3"
 
         if choice == "3":
@@ -2463,7 +2623,7 @@ def cmd_resolve_pr_review(args: argparse.Namespace) -> int:
         if choice == "2":
             return merge_pr_and_delete_branch(branch_name)
         if choice != "1":
-            print("Invalid option. Exiting.")
+            print(color("Invalid option. Exiting.", C_RED))
             return 1
 
         # Light analysis / summary using Gemini
@@ -2487,14 +2647,7 @@ If no files need modification, list:
 
 DeepSeek review comment:
 {deepseek_review_text}"""
-        res_gem = subprocess.run(
-            ["gemini", "-m", "gemini-2.5-flash", "-p", "-"],
-            cwd=str(repo_path),
-            input=summary_prompt,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+        res_gem = run_gemini_cli(summary_prompt, str(repo_path))
         gem_text = ""
         files_to_modify = []
         if res_gem.returncode == 0:
@@ -2531,14 +2684,17 @@ DeepSeek review comment:
                 f"gemini-review-analysis-pr-{pr_number}.log",
                 (res_gem.stdout or "") + (res_gem.stderr or ""),
             )
-            print(f"Gemini analysis failed. Output saved to: {gem_display_path}")
+            print(color(f"Gemini analysis failed. Output saved to: {gem_display_path}", C_RED))
 
-        print(f"\nDeepSeek Review Verdict: {verdict} (Confidence: {confidence})")
-        print("What would you like to do next?")
-        print("  1) Run Codex technical plan only")
-        print("  2) Resolve findings using Codex")
-        print("  3) Merge Pull Request and delete branch")
-        print("  4) Exit (keep PR open)")
+        verdict_str = colored_verdict(verdict)
+        confidence_str = color(confidence, C_CYAN) if confidence else ""
+        suffix = f" (Confidence: {confidence_str})" if confidence_str else ""
+        print(f"\nDeepSeek Review Verdict: {verdict_str}{suffix}")
+        print(color("What would you like to do next?", C_BOLD))
+        print(f"  {color('1)', C_GREEN)} Run Codex technical plan only")
+        print(f"  {color('2)', C_GREEN)} Resolve findings using Codex")
+        print(f"  {color('3)', C_GREEN)} Merge Pull Request and delete branch")
+        print(f"  {color('4)', C_GREEN)} Exit (keep PR open)")
         choice = input("Select an option [1-4, default: 4]: ").strip() or "4"
 
         if choice == "4":
@@ -2547,7 +2703,7 @@ DeepSeek review comment:
         if choice == "3":
             return merge_pr_and_delete_branch(branch_name)
         if choice not in {"1", "2"}:
-            print("Invalid option. Exiting.")
+            print(color("Invalid option. Exiting.", C_RED))
             return 1
 
         analysis_prompt = f"""Analyze the code review findings listed in the following DeepSeek review comment against the current repository state. Do NOT modify any files.
@@ -2642,21 +2798,21 @@ DeepSeek review findings:
             modified_files = changed_files_from_status(res_status.stdout)
 
             if not modified_files:
-                print("\nNo code changes were made by Codex.")
+                print(color("\nNo code changes were made by Codex.", C_YELLOW))
 
-                print("\nWould you like to merge this Pull Request and delete the branch?")
-                print("  1) Merge PR and delete branch")
-                print("  2) Keep PR open and exit")
-                choice_merge = input("Select an option [1-2, default: 2]: ").strip()
+                print(color("\nWould you like to merge this Pull Request and delete the branch?", C_BOLD))
+                print(f"  {color('1)', C_GREEN)} Merge PR and delete branch")
+                print(f"  {color('2)', C_GREEN)} Keep PR open and exit")
+                choice_merge = input("Select an option [1-2, default: 2]: ").strip() or "2"
                 if choice_merge == "1":
                     return merge_pr_and_delete_branch(branch_name)
                 else:
                     return 0
 
             # Staging resolved files
-            print("\nCodex completed successfully. Staging modified files...")
+            print(color("\nCodex completed successfully. Staging modified files...", C_GREEN))
             if not stage_pr_review_files(modified_files):
-                print("Review fixes were left unstaged. Resolve conflicts and rerun the PR review flow.")
+                print(color("Review fixes were left unstaged. Resolve conflicts and rerun the PR review flow.", C_RED))
                 return 1
 
             res_verify = subprocess.run(
@@ -2668,25 +2824,25 @@ DeepSeek review findings:
             )
             remaining = [line.strip() for line in res_verify.stdout.splitlines() if line.strip()]
             if remaining:
-                print("Some changes are still unstaged after staging review fixes:")
+                print(color("Some changes are still unstaged after staging review fixes:", C_RED))
                 for path in remaining:
                     print(f"  - {path}")
-                print("Review the listed files, then rerun the PR review flow.")
+                print(color("Review the listed files, then rerun the PR review flow.", C_RED))
                 return 1
 
             # Commit and push changes
             commit_msg = "chore: resolve DeepSeek review findings"
-            print(f"\nCreating commit: '{commit_msg}'")
+            print(f"\n{color('Creating commit:', C_CYAN)} '{color(commit_msg, C_GREEN)}'")
             res_commit = subprocess.run(
                 ["git", "commit", "-m", commit_msg],
                 cwd=str(repo_path),
                 check=False,
             )
             if res_commit.returncode != 0:
-                print("Error committing. Exiting.")
+                print(color("Error committing. Exiting.", C_RED))
                 return res_commit.returncode
 
-            print("Pushing commits to remote to trigger a new DeepSeek review...")
+            print(color("Pushing commits to remote to trigger a new DeepSeek review...", C_CYAN))
             push_env = {**os.environ, "TV7_ALLOW_PUSH": "1"}
             res_push = subprocess.run(
                 ["git", "push"],
@@ -2695,11 +2851,11 @@ DeepSeek review findings:
                 check=False,
             )
             if res_push.returncode != 0:
-                print("Error pushing to remote. Exiting.")
+                print(color("Error pushing to remote. Exiting.", C_RED))
                 return res_push.returncode
 
             if deepseek_review_time is None:
-                print("Error: DeepSeek review timestamp was not available after processing.")
+                print(color("Error: DeepSeek review timestamp was not available after processing.", C_RED))
                 return 1
 
             last_processed_timestamp = deepseek_review_time
