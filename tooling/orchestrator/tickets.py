@@ -12,6 +12,7 @@ import re
 from typing import Callable
 from typing import Any
 
+from .gemini_utils import _gemini_capacity_error, _gemini_command
 from .idempotency import has_idempotency_key, make_idempotency_key, record_idempotency_key
 from .lifecycle import WorkStage, transition_item_stage
 from .models import now_iso
@@ -227,14 +228,6 @@ def _extract_json_object_from_text(text: str) -> dict[str, Any]:
     raise ValueError("response does not contain a valid JSON object")
 
 
-def _gemini_capacity_error(output: str) -> bool:
-    lowered = output.lower()
-    return any(
-        marker in lowered
-        for marker in ["capacity", "exhausted", "quota", "429", "rate limit", "too many requests"]
-    )
-
-
 def _run_gemini_json_prompt(
     *,
     core_dir: Path,
@@ -254,9 +247,8 @@ def _run_gemini_json_prompt(
     if not repo_path.exists():
         raise RuntimeError(f"Repo path not found for gemini run: {repo_path}")
 
-    cmd = ["gemini", "--prompt", prompt, "--output-format", "json", "--approval-mode", "yolo"]
-    if model:
-        cmd.extend(["--model", model])
+    model_to_check = model or "gemini-2.5-flash"
+    cmd = _gemini_command(model_to_check)
 
     reports_dir = paths(core_dir)["root"] / "reports" / report_subdir
     reports_dir.mkdir(parents=True, exist_ok=True)
@@ -267,21 +259,22 @@ def _run_gemini_json_prompt(
     try:
         result = subprocess.run(
             cmd,
+            input=prompt,
             text=True,
             capture_output=True,
             check=False,
             timeout=timeout_sec,
             cwd=repo_path,
         )
-        model_to_check = model or "gemini-2.5-flash"
         if result.returncode != 0 and model_to_check == "gemini-2.5-flash":
             err_msg = (result.stderr or result.stdout or "").strip()
             if _gemini_capacity_error(err_msg):
                 fallback_model = "gemini-2.5-pro"
-                fallback_cmd = ["gemini", "--prompt", prompt, "--output-format", "json", "--approval-mode", "yolo", "--model", fallback_model]
+                fallback_cmd = _gemini_command(fallback_model)
                 _emit(progress_cb, f"[gemini] capacity limit reached for {model_to_check}. Retrying with {fallback_model}...")
                 result = subprocess.run(
                     fallback_cmd,
+                    input=prompt,
                     text=True,
                     capture_output=True,
                     check=False,
