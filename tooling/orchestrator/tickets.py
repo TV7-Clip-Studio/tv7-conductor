@@ -12,7 +12,7 @@ import re
 from typing import Callable
 from typing import Any
 
-from .gemini_utils import _gemini_capacity_error, _gemini_command
+from .gemini_utils import _gemini_command, _gemini_error_summary
 from .idempotency import has_idempotency_key, make_idempotency_key, record_idempotency_key
 from .lifecycle import WorkStage, transition_item_stage
 from .models import now_iso
@@ -247,7 +247,7 @@ def _run_gemini_json_prompt(
     if not repo_path.exists():
         raise RuntimeError(f"Repo path not found for gemini run: {repo_path}")
 
-    model_to_check = model or "gemini-2.5-flash"
+    model_to_check = model or "gemini-2.5-pro"
     cmd = _gemini_command(model_to_check)
 
     reports_dir = paths(core_dir)["root"] / "reports" / report_subdir
@@ -266,21 +266,6 @@ def _run_gemini_json_prompt(
             timeout=timeout_sec,
             cwd=repo_path,
         )
-        if result.returncode != 0 and model_to_check == "gemini-2.5-flash":
-            err_msg = (result.stderr or result.stdout or "").strip()
-            if _gemini_capacity_error(err_msg):
-                fallback_model = "gemini-2.5-pro"
-                fallback_cmd = _gemini_command(fallback_model)
-                _emit(progress_cb, f"[gemini] capacity limit reached for {model_to_check}. Retrying with {fallback_model}...")
-                result = subprocess.run(
-                    fallback_cmd,
-                    input=prompt,
-                    text=True,
-                    capture_output=True,
-                    check=False,
-                    timeout=timeout_sec,
-                    cwd=repo_path,
-                )
     except subprocess.TimeoutExpired as exc:
         elapsed = time.monotonic() - started
         log_payload = {
@@ -308,8 +293,8 @@ def _run_gemini_json_prompt(
     }
     log_path.write_text(json.dumps(log_payload, indent=2) + "\n")
     if result.returncode != 0:
-        stderr = result.stderr.strip() or "gemini execution failed"
-        raise RuntimeError(f"gemini run failed for {repo}: {stderr} (log: {log_path})")
+        output = result.stderr.strip() or result.stdout.strip()
+        raise RuntimeError(f"gemini run failed for {repo}: {_gemini_error_summary(output, model_to_check)} (log: {log_path})")
 
     response_envelope = _extract_json_object_from_text(result.stdout)
     response_text = str(response_envelope.get("response", "")).strip()

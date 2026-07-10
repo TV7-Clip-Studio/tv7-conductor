@@ -64,7 +64,7 @@ Batch Code: A01
     - **NOTE**: Added `resolve-conflicts` subcommand under `cli.py` in `tv7-conductor`. It scans for unmerged files, runs `codex exec` to resolve them, and stages them if conflict markers are cleared. Updated `git-dev.sh` in `tv7-core` to invoke Conductor.
 - [X] [CD-A01-04-06] Add `describe-changes` command to Conductor CLI to display PR-like bulleted change summaries.
     **COMPLETED** | Architect Agent | 2026-06-07 20:53
-    - **NOTE**: Added `describe-changes` subcommand under `cli.py` in `tv7-conductor`. It queries `gemini-2.5-flash` to generate a bulleted summary of current repository changes. Wired it to display context immediately in `git-dev.sh`.
+    - **NOTE**: Added `describe-changes` subcommand under `cli.py` in `tv7-conductor`. It queries the configured Gemini model (default `gemini-2.5-pro`) to generate a bulleted summary of current repository changes. Wired it to display context immediately in `git-dev.sh`.
 
 
 

@@ -25,7 +25,7 @@ class ResolveConflictsTests(unittest.TestCase):
             stdout=(
                 'Loaded cached credentials.\n'
                 '{"response": "feature-one\\nfeature-two\\n", '
-                '"stats": {"models": {"gemini-2.5-flash": {"tokens": {"total": 12, "cached": 4}}}}}'
+                '"stats": {"models": {"gemini-2.5-pro": {"tokens": {"total": 12, "cached": 4}}}}}'
             ),
             stderr="",
         )
@@ -35,22 +35,27 @@ class ResolveConflictsTests(unittest.TestCase):
 
         self.assertEqual(result.returncode, 0)
         self.assertEqual(result.stdout, "feature-one\nfeature-two\n")
-        self.assertEqual(mock_run.call_args_list[0][0][0], ["gemini", "-m", "gemini-2.5-flash", "-p", "-", "-o", "json"])
+        self.assertEqual(mock_run.call_args_list[0][0][0], ["gemini", "-m", "gemini-2.5-pro", "-p", "-", "-o", "json"])
 
     @patch("subprocess.run")
-    def test_run_gemini_cli_falls_back_on_capacity_error(self, mock_run: MagicMock) -> None:
-        mock_run.side_effect = [
-            MagicMock(returncode=1, stdout="", stderr="429 capacity exhausted"),
-            MagicMock(returncode=0, stdout='{"response": "fallback-ok"}', stderr=""),
-        ]
+    def test_run_gemini_cli_reports_capacity_without_model_fallback(self, mock_run: MagicMock) -> None:
+        mock_run.return_value = MagicMock(returncode=1, stdout="", stderr="429 capacity exhausted")
 
         with patch("sys.stderr", new=StringIO()):
             result = cli.run_gemini_cli("prompt", "/tmp")
 
-        self.assertEqual(result.returncode, 0)
-        self.assertEqual(result.stdout, "fallback-ok")
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(result.stderr, "gemini-2.5-pro unavailable: capacity or quota limit")
+        self.assertEqual(mock_run.call_count, 1)
+
+    @patch("subprocess.run")
+    def test_run_gemini_cli_honors_explicit_model_override(self, mock_run: MagicMock) -> None:
+        mock_run.return_value = MagicMock(returncode=0, stdout='{"response": "ok"}', stderr="")
+
+        with patch.dict("os.environ", {"TV7_GEMINI_MODEL": "gemini-2.5-flash"}), patch("sys.stderr", new=StringIO()):
+            cli.run_gemini_cli("prompt", "/tmp")
+
         self.assertEqual(mock_run.call_args_list[0][0][0], ["gemini", "-m", "gemini-2.5-flash", "-p", "-", "-o", "json"])
-        self.assertEqual(mock_run.call_args_list[1][0][0], ["gemini", "-m", "gemini-2.5-pro", "-p", "-", "-o", "json"])
 
     @patch("subprocess.run")
     def test_resolve_conflicts_no_unmerged_files(self, mock_run: MagicMock) -> None:
@@ -136,7 +141,7 @@ class ResolveConflictsTests(unittest.TestCase):
 
             # Check gemini call args
             gemini_call = mock_run.call_args_list[1]
-            self.assertEqual(gemini_call[0][0], ["gemini", "-m", "gemini-2.5-flash", "-p", "-", "-o", "json"])
+            self.assertEqual(gemini_call[0][0], ["gemini", "-m", "gemini-2.5-pro", "-p", "-", "-o", "json"])
             self.assertIn("ticket details", gemini_call[1]["input"])
             self.assertIn("src/main.py", gemini_call[1]["input"])
 
@@ -164,7 +169,7 @@ class ResolveConflictsTests(unittest.TestCase):
 
             # Check gemini call args
             gemini_call = mock_run.call_args_list[1]
-            self.assertEqual(gemini_call[0][0], ["gemini", "-m", "gemini-2.5-flash", "-p", "-", "-o", "json"])
+            self.assertEqual(gemini_call[0][0], ["gemini", "-m", "gemini-2.5-pro", "-p", "-", "-o", "json"])
             self.assertIn("some diff output", gemini_call[1]["input"])
 
     @patch("subprocess.run")
@@ -191,7 +196,7 @@ class ResolveConflictsTests(unittest.TestCase):
 
             # Check gemini call args
             gemini_call = mock_run.call_args_list[1]
-            self.assertEqual(gemini_call[0][0], ["gemini", "-m", "gemini-2.5-flash", "-p", "-", "-o", "json"])
+            self.assertEqual(gemini_call[0][0], ["gemini", "-m", "gemini-2.5-pro", "-p", "-", "-o", "json"])
             self.assertIn("some diff output", gemini_call[1]["input"])
             self.assertIn("Generate a brief, clear bulleted summary", gemini_call[1]["input"])
 
