@@ -30,7 +30,6 @@ def _infer_repos(title: str, tasks: list[str]) -> list[str]:
     hint_map = {
         "backend": "tv7-backend",
         "fastapi": "tv7-backend",
-        "flutter": "tv7-studio",
         "studio": "tv7-studio",
         "engine": "tv7-engine",
         "axum": "tv7-engine",
