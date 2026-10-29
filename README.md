@@ -103,3 +103,7 @@ It creates a temporary project, ingests its roadmap, creates an isolated git wor
 
 ## Compatibility
 `tv7-core` keeps shim Make targets (`make conductor-*`) that call this repo.
+
+## License
+
+TV7 source in this repository is available under the [MIT License](LICENSE). External dependencies and tools retain their respective licenses. See the [TV7 project overview](https://github.com/TV7-Clip-Studio/tv7-core/blob/main/PROJECT.md) for the repository map and current scope.
