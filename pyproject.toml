@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "tv7-conductor"
-version = "0.1.0"
+version = "0.2.0"
 description = "Local-first orchestration runtime for TV7 multi-repo agent workflows."
 requires-python = ">=3.11"
 dependencies = []
